@@ -38,6 +38,7 @@ Warm wird selbst erzeugt: kleines Bad oder Zimmer mit Heizkörper/Heizlüfter (c
 
 ```
 app/            Messprotokoll-App (index.html) zum Eintragen während der Versuche
+ios/            dieselbe App als iPhone-App (Messprotokoll.swiftpm, mit Xcode öffnen), Erinnerung auch bei gesperrtem Handy
 data/
   raw/          Original-CSV-Dateien vom Sensor (NIE verändern)
   processed/    bereinigte und umgerechnete Daten
