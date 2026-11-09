@@ -19,13 +19,20 @@ CSV-Format: Komma als Trennzeichen, Punkt als Dezimalzeichen, Zeiten als `YYYY-M
 
 ## Benutzung
 
-1. `index.html` auf dem Handy im Browser öffnen (Chrome oder Safari).
+1. Auf dem Handy den Link zur App öffnen: https://claude.ai/artifact/8gHjqs699M9vtBFhQ2VKJZ
+   (nur mit dem eigenen claude.ai-Konto sichtbar). Alternativ `index.html` direkt im Browser öffnen.
 2. Vor dem ersten Versuch einmal **„🔔 Ton testen“** drücken und den Ton laut stellen.
 3. Während der 20-Min.-Erholung **App geöffnet und Bildschirm an lassen**. Die App versucht, den Bildschirm automatisch wach zu halten. Wenn das Handy gesperrt ist, können Browser die Erinnerung verzögern.
 4. Nach jedem Versuch die beiden CSV-Dateien exportieren und in `protokolle/` ins Repository legen.
 
+## Wo die Daten gespeichert werden
+
+- **Über den claude.ai-Link:** in der Datenbank des Artifacts (ein Eintrag pro Durchlauf unter `runs/`). Die Daten sind auf allen Geräten verfügbar, auf denen man mit demselben Konto angemeldet ist, und Claude kann sie für die Auswertung direkt lesen. Zusätzlich gibt es eine Kopie im Browser.
+- **Lokal geöffnete `index.html`:** nur im Browser auf diesem Gerät (localStorage). Wenn Browserdaten gelöscht werden, sind sie weg.
+
+In beiden Fällen nach jedem Versuch die CSV-Dateien exportieren und ins Repository legen.
+
 ## Wichtig
 
-- Die Daten liegen **nur im Browser auf diesem Gerät** (localStorage). Wenn Browserdaten gelöscht werden, sind sie weg. Deshalb nach jedem Versuch exportieren bzw. eine Sicherung speichern.
 - Die Uhr des Handys und die Uhr des CALERA-Sensors können voneinander abweichen. Vor dem Versuch beide vergleichen und die Abweichung unter „Notizen“ eintragen, damit Zeitpunkt 0 später in den Sensordaten richtig gefunden wird.
 - Vertippt? Nicht nachträglich ändern, sondern unter „Notizen“ vermerken.
