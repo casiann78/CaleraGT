@@ -183,9 +183,12 @@ struct RunView: View {
             }
             SlotRow(run: r)
             if store.notificationsDenied {
-                Text("Mitteilungen sind ausgeschaltet! Einstellungen › Messprotokoll › Mitteilungen einschalten, sonst kommt keine Erinnerung.")
+                Text("Mitteilungen sind ausgeschaltet! Einstellungen › Mitteilungen › Messprotokoll einschalten, sonst kommt keine Erinnerung.")
                     .foregroundStyle(Color.red)
             }
+            Text("Geplante Erinnerungen: \(store.pendingReminderCount)")
+                .font(.footnote)
+                .foregroundStyle(store.pendingReminderCount > 0 || r.allSlotsRated ? Color.secondary : Color.red)
             Text("Erst bewerten, dann Kurve ansehen. Während des Versuchs nicht in die CALERA-App schauen.")
                 .font(.footnote)
             Text("Bei Schwindel oder Frösteln sofort abbrechen.").foregroundStyle(Color.orange)

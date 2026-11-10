@@ -14,12 +14,7 @@ struct HomeView: View {
                     Text(error).foregroundStyle(Color.red)
                 }
             }
-            if store.notificationsDenied {
-                Section {
-                    Text("Mitteilungen sind ausgeschaltet. Ohne Mitteilungen gibt es keine Erinnerung bei gesperrtem Handy. Einstellungen › Messprotokoll › Mitteilungen einschalten.")
-                        .foregroundStyle(Color.red)
-                }
-            }
+            NotificationSection()
             if let active = store.runs.first(where: { $0.isActive }) {
                 Section {
                     NavigationLink(value: active.id) {
@@ -78,6 +73,67 @@ struct HomeView: View {
         .alert(importMessage ?? "", isPresented: Binding(get: { importMessage != nil },
                                                          set: { if !$0 { importMessage = nil } })) {
             Button("OK", role: .cancel) {}
+        }
+    }
+}
+
+/// Zeigt, ob Erinnerungen ankommen können, und bietet eine Test-Erinnerung an
+struct NotificationSection: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.openURL) private var openURL
+    @State private var testSent = false
+
+    private var statusText: String {
+        switch store.notificationStatus {
+        case .authorized: return "erlaubt ✓"
+        case .denied: return "ausgeschaltet"
+        case .notDetermined: return "noch nicht erlaubt"
+        case .provisional: return "nur leise"
+        case .ephemeral: return "eingeschränkt"
+        @unknown default: return "unbekannt"
+        }
+    }
+
+    private var statusColor: Color {
+        store.notificationStatus == .authorized && store.notificationHints.isEmpty ? Color.green : Color.red
+    }
+
+    var body: some View {
+        Section("Erinnerungen") {
+            HStack {
+                Text("Mitteilungen")
+                Spacer()
+                Text(statusText).bold().foregroundStyle(statusColor)
+            }
+            if store.notificationStatus == .denied {
+                Text("Ohne Mitteilungen gibt es keine Erinnerung bei gesperrtem Handy.")
+                    .font(.footnote)
+                    .foregroundStyle(Color.red)
+            }
+            ForEach(store.notificationHints, id: \.self) { hint in
+                Text(hint).font(.footnote).foregroundStyle(Color.orange)
+            }
+            if store.notificationStatus == .notDetermined {
+                Button("Mitteilungen erlauben") { store.requestNotificationPermission() }
+            }
+            if store.notificationStatus == .denied || !store.notificationHints.isEmpty {
+                Button("Mitteilungs-Einstellungen öffnen") {
+                    if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
+                }
+            }
+            Button("Test-Erinnerung in 10 Sekunden") {
+                store.sendTestNotification()
+                testSent = true
+            }
+            if testSent {
+                Text("Jetzt das iPhone sperren und 10 Sekunden warten. Es sollte eine Mitteilung mit Ton kommen.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if store.recoveryRun != nil {
+                Text("Geplante Erinnerungen für den laufenden Durchlauf: \(store.pendingReminderCount)")
+                    .font(.footnote)
+            }
         }
     }
 }
