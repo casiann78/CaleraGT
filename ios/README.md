@@ -34,7 +34,6 @@ Mit einer kostenlosen Apple-ID läuft die App **7 Tage**. Danach einfach Schritt
 ## Vor jedem Versuch
 
 - In den Einstellungen „Test-Erinnerung in 10 Sekunden“ drücken und das iPhone sperren. Kommt die Mitteilung mit Ton, ist alles bereit.
-
 - **Stummschalter aus** und **Fokus / Nicht stören aus**, sonst ist die Erinnerung lautlos (sie vibriert dann nur).
 - Lautstärke hoch.
 - Uhrzeit von iPhone und CALERA-Sensor vergleichen und die Abweichung unter „Notizen“ eintragen.
