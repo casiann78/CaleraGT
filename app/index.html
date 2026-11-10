@@ -276,7 +276,16 @@ function fmtTime(ms) { if (!ms) return ''; const d = new Date(ms); return `${pad
 function fmtDateTime(ms) { if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${fmtTime(ms)}`; }
 function fmtDur(ms) { const s = Math.max(0, Math.floor(ms / 1000)); return `${pad(Math.floor(s / 60))}:${pad(s % 60)}`; }
 function today() { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
-function num(v) { if (v === '' || v === null || v === undefined) return null; const n = Number(String(v).replace(',', '.')); return Number.isFinite(n) ? n : null; }
+// Zahl aus Texteingabe lesen; Einheiten (°C, %) und Leerzeichen werden ignoriert („21,5 °C“ → 21.5)
+function num(v) {
+  if (v === '' || v === null || v === undefined) return null;
+  const cleaned = String(v).replace(',', '.').replace(/°C|°|%/g, '').trim();
+  if (cleaned === '') return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+// Für den Export: Zahl, sonst Originaltext (nie stillschweigend leer)
+function numOrText(v) { const n = num(v); return n !== null ? n : String(v ?? '').trim(); }
 
 function toast(text) {
   const t = $('#toast'); t.textContent = text; t.hidden = false;
@@ -682,7 +691,7 @@ function exportRuns() {
   const header = ['condition', 'run_no', 'date', 'room_temp_start_c', 'room_temp_end_c', 'humidity_pct', 'training', 'clothing',
     'location', 'sensor_file', 'rest_start', 'rest_end', 'sport_start', 'sport_end', 't0',
     'feel_rest', ...SLOTS.map((s) => 'feel_' + s), 'status', 'abort_reason', 'outlier', 'outlier_reason', 'notes'];
-  const rows = sortedRuns().map((r) => [r.condition, r.runNo, r.date, num(r.roomTempStart), num(r.roomTempEnd), num(r.humidity),
+  const rows = sortedRuns().map((r) => [r.condition, r.runNo, r.date, numOrText(r.roomTempStart), numOrText(r.roomTempEnd), numOrText(r.humidity),
     r.training, r.clothing, r.location, r.sensorFile, fmtDateTime(r.restStart), fmtDateTime(r.restEnd),
     fmtDateTime(r.sportStart), fmtDateTime(r.sportEnd), fmtDateTime(r.t0),
     r.ratings.rest?.value, ...SLOTS.map((s) => r.ratings[s]?.value), status(r), r.abortReason,

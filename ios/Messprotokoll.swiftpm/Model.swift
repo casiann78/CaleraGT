@@ -236,9 +236,16 @@ func signedText(_ v: Int?) -> String {
     return v > 0 ? "+\(v)" : "\(v)"
 }
 
-/// Zahl aus Texteingabe lesen, Komma oder Punkt als Dezimalzeichen
+/// Zahl aus Texteingabe lesen, Komma oder Punkt als Dezimalzeichen.
+/// Einheiten wie „°C“ oder „%“ und Leerzeichen werden ignoriert („21,5 °C“ → 21.5).
 func parseNumber(_ s: String) -> Double? {
-    Double(s.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: "."))
+    let cleaned = s
+        .replacingOccurrences(of: ",", with: ".")
+        .replacingOccurrences(of: "°C", with: "")
+        .replacingOccurrences(of: "°", with: "")
+        .replacingOccurrences(of: "%", with: "")
+        .trimmingCharacters(in: .whitespaces)
+    return Double(cleaned)
 }
 
 func ratingText(_ r: Rating?) -> String {

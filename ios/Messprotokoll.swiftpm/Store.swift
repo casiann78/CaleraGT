@@ -276,8 +276,10 @@ final class Store: ObservableObject {
         ([header] + rows).map { $0.map { cell in self.csvCell(cell) }.joined(separator: ",") }.joined(separator: "\n") + "\n"
     }
 
+    /// Zahl einheitlich mit Punkt exportieren. Ist die Eingabe keine Zahl,
+    /// wird der Originaltext exportiert (nie stillschweigend leer).
     private func numberText(_ s: String) -> String {
-        guard let d = parseNumber(s) else { return "" }
+        guard let d = parseNumber(s) else { return s.trimmingCharacters(in: .whitespaces) }
         if d == d.rounded() && abs(d) < 1e9 { return String(Int(d)) }
         return String(d)
     }
