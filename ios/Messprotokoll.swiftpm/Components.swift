@@ -91,11 +91,11 @@ struct ChecklistRow: View {
 struct StepIndicator: View {
     let current: Int
     let color: Color
-    private let steps = ["Ruhe", "Sport", "Erholung", "Fertig"]
+    private static let steps = ["Ruhe", "Sport", "Erholung", "Fertig"]
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(0..<steps.count, id: \.self) { i in
+            ForEach(0..<Self.steps.count, id: \.self) { i in
                 VStack(spacing: 6) {
                     ZStack {
                         Circle()
@@ -111,7 +111,7 @@ struct StepIndicator: View {
                                 .foregroundStyle(i == current ? Color.white : Color.secondary)
                         }
                     }
-                    Text(steps[i])
+                    Text(Self.steps[i])
                         .font(.caption2)
                         .foregroundStyle(i == current ? Color.primary : Color.secondary)
                 }
@@ -235,6 +235,7 @@ struct SlotChip: View {
 /// Diagramm: Gefühl über die Minuten nach Zeitpunkt 0, gestrichelt der Ruhewert
 struct FeelingChart: View {
     let run: Run
+    var height: CGFloat = 190
 
     private var restValues: [Int] {
         if let v = run.ratings["rest"]?.value { return [v] }
@@ -266,13 +267,15 @@ struct FeelingChart: View {
             AxisMarks(values: [-3, -2, -1, 0, 1, 2, 3])
         }
         .chartXAxisLabel("Minuten nach Zeitpunkt 0")
-        .frame(height: 190)
+        .chartYAxisLabel("Gefühl")
+        .frame(height: height)
     }
 }
 
 /// Karte mit Diagramm und Tabelle der Gefühlswerte
 struct FeelingCard: View {
     let run: Run
+    @State private var shareItems: ShareItems?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -289,6 +292,12 @@ struct FeelingCard: View {
                     .foregroundStyle(.secondary)
             } else {
                 FeelingChart(run: run)
+                Button {
+                    shareChart()
+                } label: {
+                    Label("Diagramm als Bild teilen", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(.bordered)
             }
             Divider()
             ForEach(["rest"] + ratingSlots.map { String($0) }, id: \.self) { key in
@@ -299,6 +308,62 @@ struct FeelingCard: View {
                 .foregroundStyle(.secondary)
         }
         .card()
+        .sheet(item: $shareItems) { items in
+            ActivityView(items: items.urls)
+        }
+    }
+
+    private func shareChart() {
+        Task { @MainActor in
+            let name = "gefuehlsverlauf_\(run.condition.rawValue)_nr\(run.runNo).png"
+            if let url = renderPNG(RunChartPoster(run: run), width: 900, filename: name) {
+                shareItems = ShareItems(urls: [url])
+            }
+        }
+    }
+}
+
+/// Diagramm eines Durchlaufs mit Überschrift, für die Bilddatei
+struct RunChartPoster: View {
+    let run: Run
+
+    private var subtitle: String {
+        let temp = run.roomTempStart.isEmpty ? "–" : run.roomTempStart + " °C"
+        return "\(run.displayDate) · Raumtemperatur \(temp)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Gefühlsverlauf: \(run.condition.label), Durchlauf \(run.runNo)")
+                .font(.title2.bold())
+            Text(subtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            FeelingChart(run: run, height: 360)
+            Text("Gefühlswert: −3 sehr kalt … +3 sehr heiß. Gestrichelt: Wert in Ruhe vor dem Sport.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Zeichnet eine Ansicht als PNG-Datei (weißer Hintergrund, helle Darstellung) für das Teilen-Menü
+@MainActor
+func renderPNG<V: View>(_ view: V, width: CGFloat, filename: String) -> URL? {
+    let content = view
+        .padding(28)
+        .frame(width: width)
+        .background(Color.white)
+        .environment(\.colorScheme, .light)
+    let renderer = ImageRenderer(content: content)
+    renderer.scale = 3
+    guard let image = renderer.uiImage, let data = image.pngData() else { return nil }
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+    do {
+        try data.write(to: url, options: .atomic)
+        return url
+    } catch {
+        return nil
     }
 }
 
