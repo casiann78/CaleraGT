@@ -21,6 +21,8 @@ final class Store: ObservableObject {
     @Published var path: [String] = []
     @Published var ratingPrompt: RatingPrompt?
     @Published var notificationStatus: UNAuthorizationStatus = .notDetermined
+    /// true, sobald der Status einmal abgefragt wurde (verhindert kurzes Aufblinken von Warnungen)
+    @Published var notificationStatusKnown = false
     /// Hinweise, warum Erinnerungen evtl. nicht ankommen (z. B. Töne aus)
     @Published var notificationHints: [String] = []
     /// Anzahl geplanter Erinnerungen (ohne Test-Erinnerung)
@@ -206,6 +208,7 @@ final class Store: ObservableObject {
                 let count = requests.filter { $0.identifier != "test" }.count
                 DispatchQueue.main.async {
                     self.notificationStatus = status
+                    self.notificationStatusKnown = true
                     self.notificationHints = hints
                     self.pendingReminderCount = count
                 }

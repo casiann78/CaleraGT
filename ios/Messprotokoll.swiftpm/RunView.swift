@@ -19,7 +19,7 @@ enum ConfirmKind: String, Identifiable {
         switch self {
         case .restWithoutTemp: return "Trotzdem mit der Ruhemessung beginnen?"
         case .sportWithoutRest: return "Das Gefühl in Ruhe wurde noch nicht bewertet. Trotzdem mit Sport beginnen?"
-        case .t0: return "Die 20-Minuten-Erholung beginnt jetzt. Du wirst bei 0, 5, 10, 15 und 20 Minuten erinnert, auch bei gesperrtem Handy. Stummschalter aus und Fokus/Nicht stören aus, damit du den Ton hörst."
+        case .t0: return "Die 20-Minuten-Erholung beginnt jetzt. Du wirst bei 0, 5, 10, 15 und 20 Minuten erinnert, auch bei gesperrtem Handy. Stummschalter und Fokus/Nicht stören ausschalten, damit du den Ton hörst."
         case .finishWithoutTemp: return "Trotzdem abschließen?"
         case .delete: return "Der Durchlauf wird endgültig entfernt. Fehlerhafte Messungen besser als Ausreißer markieren statt löschen."
         }
@@ -36,9 +36,24 @@ enum ConfirmKind: String, Identifiable {
     }
 }
 
+/// Der große Knopf unten: immer genau der nächste Schritt
+struct PrimaryAction {
+    let title: String
+    let icon: String
+    let perform: () -> Void
+}
+
+enum RunTab: String, CaseIterable, Identifiable {
+    case procedure = "Ablauf"
+    case details = "Kopfdaten"
+    case notes = "Notizen"
+    var id: String { rawValue }
+}
+
 struct RunView: View {
     @EnvironmentObject var store: Store
     let runId: String
+    @State private var tab: RunTab = .procedure
     @State private var confirm: ConfirmKind?
     @State private var showAbort = false
     @State private var abortReason = ""
@@ -54,61 +69,26 @@ struct RunView: View {
     // MARK: Aufbau
 
     private func content(_ r: Run) -> some View {
-        Form {
-            Section("Ablauf") {
-                phaseContent(r)
-            }
-
-            Section("Kopfdaten") {
-                Picker("Bedingung", selection: conditionBinding) {
-                    ForEach(Condition.allCases) { c in
-                        Text("\(c.label) (\(c.target))").tag(c)
-                    }
-                }
-                labeled("Durchlauf-Nr.", "1", \.runNo, keyboard: .numberPad)
-                DatePicker("Datum", selection: dateBinding, displayedComponents: .date)
-                labeled("Raumtemperatur Start [°C]", "z. B. 11,5", \.roomTempStart, keyboard: .decimalPad)
-                if r.phase != .recovery {
-                    labeled("Raumtemperatur Ende [°C]", "z. B. 11,8", \.roomTempEnd, keyboard: .decimalPad)
-                }
-                Group {
-                    labeled("Luftfeuchte [%]", "z. B. 45", \.humidity, keyboard: .decimalPad)
-                    labeled("Training (Art, Dauer, Intensität)", "z. B. 30 Min. Joggen, mittel", \.training)
-                    labeled("Kleidung", "z. B. T-Shirt, kurze Hose", \.clothing)
-                    labeled("Ort / wie wurde die Temperatur erzeugt?", "z. B. Bad mit Heizlüfter", \.location)
-                    labeled("Name der Sensor-CSV (data/raw/)", "", \.sensorFile)
-                }
-                ForEach(warnings(for: r), id: \.self) { w in
-                    Text(w.text)
-                        .font(.footnote)
-                        .foregroundStyle(w.danger ? Color.red : Color.orange)
+        VStack(spacing: 0) {
+            Picker("Ansicht", selection: $tab) {
+                ForEach(RunTab.allCases) { t in
+                    Text(t.rawValue).tag(t)
                 }
             }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
 
-            Section("Gefühlswerte (−3 sehr kalt … +3 sehr heiß)") {
-                ForEach(["rest"] + ratingSlots.map { String($0) }, id: \.self) { key in
-                    RatingRow(key: key, rating: r.ratings[key])
-                }
-                Text("Vertippt? Nicht nachträglich ändern, sondern unter „Notizen“ vermerken.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Notizen und Auffälligkeiten") {
-                TextField("Notizen (Besonderheiten, Störungen, Uhrzeit-Abweichung Handy/Sensor …)",
-                          text: text(\.notes), axis: .vertical)
-                    .lineLimit(3...8)
-                Toggle("Als Ausreißer / fehlerhafte Messung markieren", isOn: outlierBinding)
-                labeled("Begründung", "", \.outlierReason)
-            }
-
-            Section {
-                Button("Durchlauf löschen", role: .destructive) { confirm = .delete }
-                Text("Abgebrochene oder fehlerhafte Durchläufe besser behalten und markieren statt löschen.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            switch tab {
+            case .procedure:
+                procedure(r)
+            case .details:
+                detailsForm(r)
+            case .notes:
+                notesForm(r)
             }
         }
+        .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("\(r.condition.label) · Nr. \(r.runNo)")
         .navigationBarTitleDisplayMode(.inline)
         .alert(confirm?.title ?? "",
@@ -133,96 +113,228 @@ struct RunView: View {
         )
     }
 
-    @ViewBuilder
-    private func phaseContent(_ r: Run) -> some View {
-        switch r.phase {
-        case .setup:
-            Text("1. Kopfdaten unten ausfüllen (mindestens Raumtemperatur Start).")
-            Text("2. Sensor anlegen und Ruhemessung beginnen (10–15 Min.).")
-            Button("Ruhemessung starten") {
-                if parseNumber(r.roomTempStart) == nil { confirm = .restWithoutTemp } else { store.startRest(runId) }
-            }
-            .bold()
+    // MARK: Reiter „Ablauf“
 
-        case .rest:
-            Text("Ruhemessung seit \(timeString(r.restStart)) · Ziel 10–15 Min.").foregroundStyle(.secondary)
-            ClockView(since: r.restStart)
-            Text(restText(r))
-            Button("Ruhe-Gefühl bewerten") { store.ratingPrompt = RatingPrompt(runId: runId, slot: "rest") }
-            Button("Ruhemessung beenden") { store.endRest(runId) }.bold()
-
-        case .afterRest:
-            Text("Ruhemessung \(timeString(r.restStart))–\(timeString(r.restEnd)) · \(restText(r))")
-            if r.ratings["rest"] == nil {
-                Button("Ruhe-Gefühl bewerten") { store.ratingPrompt = RatingPrompt(runId: runId, slot: "rest") }
-            }
-            Text("3. Sport machen (z. B. 30 Min., immer gleiche Intensität).")
-            Button("Sport starten") {
-                if r.ratings["rest"] == nil { confirm = .sportWithoutRest } else { store.startSport(runId) }
-            }
-            .bold()
-
-        case .sport:
-            Text("Sport seit \(timeString(r.sportStart))").foregroundStyle(.secondary)
-            ClockView(since: r.sportStart)
-            Text("Bei Schwindel oder Frösteln sofort abbrechen.").foregroundStyle(Color.orange)
-            Button("Sport beendet") { store.endSport(runId) }.bold()
-
-        case .ready:
-            Text("Sport \(timeString(r.sportStart))–\(timeString(r.sportEnd)).")
-            Text("Sofort in den Messbereich gehen. Sobald du dort bist, Zeitpunkt 0 bestätigen. Danach wirst du bei 0, 5, 10, 15 und 20 Min. erinnert.")
-            Button("Ich bin im Messbereich – Zeitpunkt 0 bestätigen") { confirm = .t0 }.bold()
-
-        case .recovery:
-            Text("Zeitpunkt 0: \(timeString(r.t0)) · Handy darf gesperrt werden, die Erinnerung kommt als Mitteilung.")
-                .foregroundStyle(.secondary)
-            ClockView(since: r.t0)
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(nextText(r, now: context.date))
-                    .frame(maxWidth: .infinity)
-            }
-            SlotRow(run: r)
-            if store.notificationsDenied {
-                Text("Mitteilungen sind ausgeschaltet! Einstellungen › Mitteilungen › Messprotokoll einschalten, sonst kommt keine Erinnerung.")
-                    .foregroundStyle(Color.red)
-            }
-            Text("Geplante Erinnerungen: \(store.pendingReminderCount)")
-                .font(.footnote)
-                .foregroundStyle(store.pendingReminderCount > 0 || r.allSlotsRated ? Color.secondary : Color.red)
-            Text("Erst bewerten, dann Kurve ansehen. Während des Versuchs nicht in die CALERA-App schauen.")
-                .font(.footnote)
-            Text("Bei Schwindel oder Frösteln sofort abbrechen.").foregroundStyle(Color.orange)
-            if r.allSlotsRated {
-                Text("Fertig! Raumtemperatur am Ende messen und eintragen.").bold()
-                labeled("Raumtemperatur Ende [°C]", "z. B. 11,8", \.roomTempEnd, keyboard: .decimalPad)
-                Button("Durchlauf abschließen") {
-                    if parseNumber(r.roomTempEnd) == nil { confirm = .finishWithoutTemp } else { store.finish(runId) }
+    private func procedure(_ r: Run) -> some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                if r.phase == .aborted {
+                    BannerView(icon: "xmark.octagon.fill",
+                               text: "Abgebrochen um \(timeString(r.abortedAt))" + (r.abortReason.isEmpty ? "" : ": " + r.abortReason) + ". Der Durchlauf bleibt gespeichert und wird beim Export als „aborted“ markiert.",
+                               color: Color.red)
+                } else {
+                    StepIndicator(current: r.stepIndex, color: r.condition.color)
+                        .card()
+                    phaseCard(r)
                 }
-                .bold()
+
+                let w = warnings(for: r)
+                if !w.isEmpty {
+                    VStack(spacing: 8) {
+                        ForEach(w, id: \.self) { warning in
+                            BannerView(icon: warning.danger ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill",
+                                       text: warning.text,
+                                       color: warning.danger ? Color.red : Color.orange)
+                        }
+                    }
+                }
+
+                if r.t0 != nil || r.ratings["rest"] != nil {
+                    FeelingCard(run: r)
+                }
+
+                if r.isActive {
+                    Button(role: .destructive) {
+                        abortReason = ""
+                        showAbort = true
+                    } label: {
+                        Label("Versuch abbrechen", systemImage: "xmark.octagon")
+                    }
+                    .padding(.top, 4)
+                }
             }
-
-        case .done:
-            Label("Durchlauf abgeschlossen", systemImage: "checkmark.circle.fill").foregroundStyle(Color.green)
-            Text("Zeitpunkt 0: \(dateTimeString(r.t0)). Sensor-CSV nach data/raw/ kopieren und den Dateinamen unten eintragen.")
-                .font(.footnote)
-
-        case .aborted:
-            Text("Abgebrochen um \(timeString(r.abortedAt))" + (r.abortReason.isEmpty ? "" : ": " + r.abortReason))
-                .foregroundStyle(Color.red)
-            Text("Der Durchlauf bleibt gespeichert und wird beim Export als „aborted“ markiert.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            .padding()
         }
-
-        if r.isActive {
-            Button("Versuch abbrechen", role: .destructive) {
-                abortReason = ""
-                showAbort = true
-            }
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom) {
+            actionBar(r)
         }
     }
 
-    // MARK: Aktionen
+    @ViewBuilder
+    private func phaseCard(_ r: Run) -> some View {
+        let color = r.condition.color
+        switch r.phase {
+        case .setup:
+            PhaseCard(icon: "checklist", title: "Vorbereitung", color: color) {
+                Text("Sensor anlegen, Kopfdaten ausfüllen und dann 10–15 Minuten ruhig sitzen.")
+                    .font(.subheadline)
+                ChecklistRow(done: parseNumber(r.roomTempStart) != nil, text: "Raumtemperatur Start")
+                ChecklistRow(done: parseNumber(r.humidity) != nil, text: "Luftfeuchte")
+                ChecklistRow(done: !r.training.isEmpty, text: "Training")
+                ChecklistRow(done: !r.clothing.isEmpty, text: "Kleidung")
+                Button("Kopfdaten ausfüllen") { tab = .details }
+                    .buttonStyle(.bordered)
+            }
+
+        case .rest:
+            PhaseCard(icon: "figure.mind.and.body", title: "Ruhemessung", color: color) {
+                BigClock(since: r.restStart, caption: "seit \(timeString(r.restStart)) · Ziel 10–15 Min.")
+                restRatingRow(r)
+            }
+
+        case .afterRest:
+            PhaseCard(icon: "figure.run", title: "Bereit für den Sport", color: color) {
+                Text("Ruhemessung \(timeString(r.restStart))–\(timeString(r.restEnd))")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                restRatingRow(r)
+                Text("Jetzt Sport machen, z. B. 30 Minuten, immer mit gleicher Intensität.")
+                    .font(.subheadline)
+            }
+
+        case .sport:
+            PhaseCard(icon: "figure.run", title: "Sport", color: color) {
+                BigClock(since: r.sportStart, caption: "seit \(timeString(r.sportStart))")
+                Text("Danach sofort in den Messbereich. Bei Schwindel oder Frösteln sofort abbrechen.")
+                    .font(.subheadline)
+            }
+
+        case .ready:
+            PhaseCard(icon: "thermometer", title: "Ab in den Messbereich", color: color) {
+                Text("Geh sofort in den Messbereich und bestätige dort Zeitpunkt 0.")
+                    .font(.subheadline)
+                Label("Erinnerung bei 0, 5, 10, 15 und 20 Min., auch bei gesperrtem Handy", systemImage: "bell.badge")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+        case .recovery:
+            PhaseCard(icon: "timer", title: "Erholung", color: color) {
+                RecoveryRing(run: r)
+                SlotChips(run: r)
+                if r.allSlotsRated {
+                    Text("Alle Werte erfasst. Jetzt die Raumtemperatur messen und eintragen.")
+                        .font(.subheadline.bold())
+                    LabeledContent("Raumtemperatur Ende") {
+                        HStack(spacing: 4) {
+                            TextField("°C", text: text(\.roomTempEnd))
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                            Text("°C").foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Text("Erst bewerten, dann Kurve ansehen. Während des Versuchs nicht in die CALERA-App schauen.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    reminderStatus(r)
+                }
+            }
+
+        case .done:
+            PhaseCard(icon: "checkmark.seal.fill", title: "Abgeschlossen", color: Color.green) {
+                Text("Zeitpunkt 0: \(dateTimeString(r.t0))")
+                    .font(.subheadline)
+                Text(r.sensorFile.isEmpty
+                     ? "Sensor-CSV nach data/raw/ kopieren und den Dateinamen unter „Kopfdaten“ eintragen."
+                     : "Sensor-Datei: \(r.sensorFile)")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+        case .aborted:
+            EmptyView()
+        }
+    }
+
+    private func restRatingRow(_ r: Run) -> some View {
+        HStack {
+            Text("Gefühl in Ruhe")
+            Spacer()
+            if let v = r.ratings["rest"] {
+                Text(ratingText(v))
+                    .font(.headline.monospacedDigit())
+                    .foregroundStyle(Color.white)
+                    .frame(minWidth: 40)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(feelingColor(v.value)))
+            } else {
+                Button("Jetzt bewerten") {
+                    store.ratingPrompt = RatingPrompt(runId: runId, slot: "rest")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .font(.subheadline)
+    }
+
+    @ViewBuilder
+    private func reminderStatus(_ r: Run) -> some View {
+        if store.notificationsDenied {
+            BannerView(icon: "bell.slash.fill",
+                       text: "Mitteilungen sind ausgeschaltet. Ohne sie kommt keine Erinnerung bei gesperrtem Handy.",
+                       color: Color.red)
+        } else {
+            Label("Geplante Erinnerungen: \(store.pendingReminderCount)", systemImage: "bell")
+                .font(.footnote)
+                .foregroundStyle(store.pendingReminderCount > 0 ? Color.secondary : Color.orange)
+        }
+    }
+
+    // MARK: Knopf für den nächsten Schritt
+
+    @ViewBuilder
+    private func actionBar(_ r: Run) -> some View {
+        if let action = primaryAction(r) {
+            Button {
+                action.perform()
+            } label: {
+                Label(action.title, systemImage: action.icon)
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(r.condition.color)
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+            .background(.bar)
+        }
+    }
+
+    private func primaryAction(_ r: Run) -> PrimaryAction? {
+        switch r.phase {
+        case .setup:
+            return PrimaryAction(title: "Ruhemessung starten", icon: "play.fill") {
+                if parseNumber(r.roomTempStart) == nil { confirm = .restWithoutTemp } else { store.startRest(runId) }
+            }
+        case .rest:
+            return PrimaryAction(title: "Ruhemessung beenden", icon: "stop.fill") {
+                store.endRest(runId)
+            }
+        case .afterRest:
+            return PrimaryAction(title: "Sport starten", icon: "figure.run") {
+                if r.ratings["rest"] == nil { confirm = .sportWithoutRest } else { store.startSport(runId) }
+            }
+        case .sport:
+            return PrimaryAction(title: "Sport beendet", icon: "stop.fill") {
+                store.endSport(runId)
+            }
+        case .ready:
+            return PrimaryAction(title: "Zeitpunkt 0 bestätigen", icon: "flag.fill") {
+                confirm = .t0
+            }
+        case .recovery:
+            guard r.allSlotsRated else { return nil }
+            return PrimaryAction(title: "Durchlauf abschließen", icon: "checkmark.circle.fill") {
+                if parseNumber(r.roomTempEnd) == nil { confirm = .finishWithoutTemp } else { store.finish(runId) }
+            }
+        case .done, .aborted:
+            return nil
+        }
+    }
 
     private func perform(_ kind: ConfirmKind) {
         switch kind {
@@ -236,22 +348,82 @@ struct RunView: View {
         }
     }
 
-    // MARK: Texte
+    // MARK: Reiter „Kopfdaten“
 
-    private func restText(_ r: Run) -> String {
-        if let v = r.ratings["rest"] { return "Ruhe-Gefühl: \(ratingText(v))" }
-        return "Ruhe-Gefühl noch nicht bewertet"
+    private func detailsForm(_ r: Run) -> some View {
+        Form {
+            Section("Durchlauf") {
+                Picker("Bedingung", selection: conditionBinding) {
+                    ForEach(Condition.allCases) { c in
+                        Label("\(c.label) (\(c.target))", systemImage: c.icon).tag(c)
+                    }
+                }
+                LabeledContent("Durchlauf-Nr.") {
+                    TextField("1", text: text(\.runNo))
+                        .keyboardType(.numberPad)
+                        .multilineTextAlignment(.trailing)
+                }
+                DatePicker("Datum", selection: dateBinding, displayedComponents: .date)
+            }
+
+            Section {
+                numberField("Raumtemperatur Start", unit: "°C", \.roomTempStart)
+                if r.phase != .recovery {
+                    numberField("Raumtemperatur Ende", unit: "°C", \.roomTempEnd)
+                }
+                numberField("Luftfeuchte", unit: "%", \.humidity)
+                labeled("Ort / wie wurde die Temperatur erzeugt?", "z. B. Bad mit Heizlüfter", \.location)
+            } header: {
+                Text("Umgebung")
+            } footer: {
+                Text("Ziel: \(r.condition.target). Immer die tatsächlich gemessene Temperatur eintragen.")
+            }
+
+            Section("Person") {
+                labeled("Training (Art, Dauer, Intensität)", "z. B. 30 Min. Joggen, mittel", \.training)
+                labeled("Kleidung", "z. B. T-Shirt, kurze Hose", \.clothing)
+            }
+
+            Section {
+                labeled("Name der Sensor-CSV", "z. B. calera_2026-11-10.csv", \.sensorFile)
+            } header: {
+                Text("Sensor")
+            } footer: {
+                Text("Die Datei kommt unverändert nach data/raw/ im Repository.")
+            }
+        }
+        .scrollDismissesKeyboard(.interactively)
     }
 
-    private func nextText(_ r: Run, now: Date) -> String {
-        guard let t0 = r.t0 else { return "" }
-        guard let next = ratingSlots.first(where: { r.ratings[String($0)] == nil }) else {
-            return "Alle Bewertungen erledigt."
+    // MARK: Reiter „Notizen“
+
+    private func notesForm(_ r: Run) -> some View {
+        Form {
+            Section {
+                TextField("Besonderheiten, Störungen, Uhrzeit-Abweichung Handy/Sensor …", text: text(\.notes), axis: .vertical)
+                    .lineLimit(4...12)
+            } header: {
+                Text("Notizen")
+            } footer: {
+                Text("Vertippt bei einer Bewertung? Hier vermerken, nicht nachträglich ändern.")
+            }
+
+            Section {
+                Toggle("Als Ausreißer markieren", isOn: outlierBinding)
+                if r.outlier {
+                    labeled("Begründung", "Warum ist die Messung auffällig?", \.outlierReason)
+                }
+            } header: {
+                Text("Auffälligkeiten")
+            } footer: {
+                Text("Fehlerhafte Messungen markieren und begründen, nicht löschen.")
+            }
+
+            Section {
+                Button("Durchlauf löschen", role: .destructive) { confirm = .delete }
+            }
         }
-        let remaining = t0 + Double(next) * 60000 - now.ms
-        return remaining > 0
-            ? "Nächste Bewertung (Min. \(next)) in \(durationString(remaining))"
-            : "Bewertung Min. \(next) ist jetzt fällig!"
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: Eingabefelder
@@ -284,94 +456,21 @@ struct RunView: View {
         )
     }
 
-    private func labeled(_ label: String, _ placeholder: String, _ keyPath: WritableKeyPath<Run, String>,
-                         keyboard: UIKeyboardType = .default) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
-            TextField(placeholder, text: text(keyPath))
-                .keyboardType(keyboard)
-        }
-    }
-}
-
-// MARK: - Hilfsansichten
-
-/// Laufende Uhr (mm:ss) seit einem Zeitpunkt
-struct ClockView: View {
-    let since: Double?
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            Text(durationString(context.date.ms - (since ?? context.date.ms)))
-                .font(.system(size: 48, weight: .bold).monospacedDigit())
-                .frame(maxWidth: .infinity)
-        }
-    }
-}
-
-/// Fünf Kästchen für 0, 5, 10, 15, 20 Min.: grün = bewertet, rot = fällig
-struct SlotRow: View {
-    let run: Run
-
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            HStack(spacing: 6) {
-                ForEach(ratingSlots, id: \.self) { s in
-                    SlotBox(minute: s,
-                            rating: run.ratings[String(s)],
-                            due: run.ratings[String(s)] == nil && context.date.ms - (run.t0 ?? 0) >= Double(s) * 60000)
-                }
+    private func numberField(_ label: String, unit: String, _ keyPath: WritableKeyPath<Run, String>) -> some View {
+        LabeledContent(label) {
+            HStack(spacing: 4) {
+                TextField("–", text: text(keyPath))
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                Text(unit).foregroundStyle(.secondary)
             }
         }
     }
-}
 
-struct SlotBox: View {
-    let minute: Int
-    let rating: Rating?
-    let due: Bool
-
-    private var borderColor: Color {
-        if rating != nil { return Color.green }
-        if due { return Color.red }
-        return Color.secondary.opacity(0.4)
-    }
-
-    var body: some View {
-        VStack(spacing: 2) {
-            Text("\(minute) Min.").font(.caption)
-            Text(rating == nil ? "·" : ratingText(rating)).font(.headline.monospacedDigit())
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 8).stroke(borderColor, lineWidth: 1.5))
-    }
-}
-
-struct RatingRow: View {
-    let key: String
-    let rating: Rating?
-
-    private var delayText: String {
-        guard let d = rating?.delayS, d > 0 else { return "" }
-        return "+\(d) s"
-    }
-
-    var body: some View {
-        HStack {
-            Text(key == "rest" ? "Ruhe" : "\(key) Min.")
-            Spacer()
-            Text(rating?.skipped == true ? "nicht bewertet" : ratingText(rating))
-                .bold()
-                .monospacedDigit()
-            Text(rating.map { timeString($0.time) } ?? "")
-                .font(.footnote.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 72, alignment: .trailing)
-            Text(delayText)
-                .font(.footnote)
-                .foregroundStyle(Color.orange)
-                .frame(width: 52, alignment: .trailing)
+    private func labeled(_ label: String, _ placeholder: String, _ keyPath: WritableKeyPath<Run, String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            TextField(placeholder, text: text(keyPath), axis: .vertical)
         }
     }
 }
