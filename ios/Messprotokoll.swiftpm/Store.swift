@@ -328,6 +328,71 @@ final class Store: ObservableObject {
         return csv(header, rows)
     }
 
+    // MARK: Diagramm-Tabellen für Numbers/Excel
+    // Deutsches Format: Semikolon als Trennzeichen, Komma als Dezimalzeichen,
+    // UTF-8 mit BOM (damit Excel Umlaute richtig anzeigt).
+
+    private func germanNumber(_ v: Double) -> String {
+        String(format: "%.2f", v).replacingOccurrences(of: ".", with: ",")
+    }
+
+    private func germanCell(_ v: String) -> String {
+        if v.contains(";") || v.contains("\"") || v.contains("\n") || v.contains("\r") {
+            return "\"" + v.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        }
+        return v
+    }
+
+    private func germanCSV(_ rows: [[String]]) -> String {
+        let lines = rows.map { row in row.map { cell in self.germanCell(cell) }.joined(separator: ";") }
+        return "\u{FEFF}" + lines.joined(separator: "\r\n") + "\r\n"
+    }
+
+    private var allSlotKeys: [String] {
+        ["rest"] + ratingSlots.map({ String($0) })
+    }
+
+    private func slotLabel(_ key: String) -> String {
+        key == "rest" ? "Ruhe" : "\(key) Min."
+    }
+
+    /// Mittelwert, Standardabweichung und n pro Bedingung und Zeitpunkt.
+    /// In Numbers/Excel die ersten vier Spalten markieren und ein Liniendiagramm einfügen.
+    func chartMeansCSV() -> String {
+        let conds = Condition.allCases
+        var header: [String] = ["Zeitpunkt"]
+        header += conds.map { c in c.label }
+        header += conds.map { c in "\(c.label) SD" }
+        header += conds.map { c in "\(c.label) n" }
+        var rows: [[String]] = [header]
+        for key in allSlotKeys {
+            let values = conds.map { c in stats(validRuns(runs, c), slot: key) }
+            var row: [String] = [slotLabel(key)]
+            row += values.map { v in v.n > 0 ? germanNumber(v.mean) : "" }
+            row += values.map { v in v.n > 1 ? germanNumber(v.sd) : "" }
+            row += values.map { v in String(v.n) }
+            rows.append(row)
+        }
+        return germanCSV(rows)
+    }
+
+    /// Gefühlswerte jedes gültigen Durchlaufs als eigene Spalte
+    func chartRunsCSV() -> String {
+        var columns: [Run] = []
+        for c in Condition.allCases {
+            columns += validRuns(runs, c).sorted { a, b in (Int(a.runNo) ?? 0) < (Int(b.runNo) ?? 0) }
+        }
+        var rows: [[String]] = [["Zeitpunkt"] + columns.map { r in "\(r.condition.label) Nr. \(r.runNo)" }]
+        for key in allSlotKeys {
+            let cells: [String] = columns.map { r in
+                if let v = r.ratings[key]?.value { return String(v) }
+                return ""
+            }
+            rows.append([slotLabel(key)] + cells)
+        }
+        return germanCSV(rows)
+    }
+
     /// Schreibt CSV-Dateien und Sicherung in einen temporären Ordner für das Teilen-Menü
     func exportFiles() -> ShareItems? {
         let day = Fmt.day.string(from: Date())
@@ -342,7 +407,11 @@ final class Store: ObservableObject {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try encoder.encode(Backup(runs: runs)).write(to: backupURL, options: .atomic)
-            return ShareItems(urls: [runsURL, ratingsURL, backupURL])
+            let chartMeansURL = dir.appendingPathComponent("diagramm_mittelwerte_\(day).csv")
+            let chartRunsURL = dir.appendingPathComponent("diagramm_einzelne_durchlaeufe_\(day).csv")
+            try chartMeansCSV().write(to: chartMeansURL, atomically: true, encoding: .utf8)
+            try chartRunsCSV().write(to: chartRunsURL, atomically: true, encoding: .utf8)
+            return ShareItems(urls: [runsURL, ratingsURL, backupURL, chartMeansURL, chartRunsURL])
         } catch {
             saveError = "Export fehlgeschlagen: \(error.localizedDescription)"
             return nil
