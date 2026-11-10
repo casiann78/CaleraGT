@@ -20,7 +20,15 @@ final class Store: ObservableObject {
     @Published var runs: [Run] = []
     @Published var path: [String] = []
     @Published var ratingPrompt: RatingPrompt?
-    @Published var notificationsDenied = false
+    @Published var notificationStatus: UNAuthorizationStatus = .notDetermined
+    /// true, sobald der Status einmal abgefragt wurde (verhindert kurzes Aufblinken von Warnungen)
+    @Published var notificationStatusKnown = false
+    /// Hinweise, warum Erinnerungen evtl. nicht ankommen (z. B. Töne aus)
+    @Published var notificationHints: [String] = []
+    /// Anzahl geplanter Erinnerungen (ohne Test-Erinnerung)
+    @Published var pendingReminderCount = 0
+
+    var notificationsDenied: Bool { notificationStatus == .denied }
     @Published var saveError: String?
 
     private let fileURL: URL = FileManager.default
@@ -183,10 +191,40 @@ final class Store: ObservableObject {
     }
 
     func refreshNotificationStatus() {
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
-            let denied = settings.authorizationStatus == .denied
-            DispatchQueue.main.async { self.notificationsDenied = denied }
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            let status = settings.authorizationStatus
+            var hints: [String] = []
+            if status == .authorized || status == .provisional {
+                if settings.lockScreenSetting == .disabled { hints.append("Auf dem Sperrbildschirm ausgeschaltet.") }
+                if settings.alertSetting == .disabled { hints.append("Banner sind ausgeschaltet.") }
+                if settings.soundSetting == .disabled { hints.append("Töne sind ausgeschaltet.") }
+                if settings.scheduledDeliverySetting == .enabled {
+                    hints.append("Zustellung steht auf „Geplante Zusammenfassung“. Bitte auf „Sofortige Zustellung“ stellen.")
+                }
+            }
+            if status == .provisional { hints.append("Mitteilungen kommen nur leise in die Mitteilungszentrale.") }
+            center.getPendingNotificationRequests { requests in
+                let count = requests.filter { $0.identifier != "test" }.count
+                DispatchQueue.main.async {
+                    self.notificationStatus = status
+                    self.notificationStatusKnown = true
+                    self.notificationHints = hints
+                    self.pendingReminderCount = count
+                }
+            }
         }
+    }
+
+    /// Einzelne Erinnerung in 10 Sekunden, um Mitteilungen zu prüfen
+    func sendTestNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "Test-Erinnerung"
+        content.body = "Wenn du das siehst und hörst, funktionieren die Erinnerungen."
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 10, repeats: false)
+        let request = UNNotificationRequest(identifier: "test", content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
     }
 
     private func reminderIds(runId: String, slot: String) -> [String] {
@@ -213,6 +251,8 @@ final class Store: ObservableObject {
                 center.add(request, withCompletionHandler: nil)
             }
         }
+        // Anzeige der geplanten Erinnerungen aktualisieren
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.refreshNotificationStatus() }
     }
 
     func cancelReminders(runId: String, slots: [String]) {
@@ -220,6 +260,7 @@ final class Store: ObservableObject {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: ids)
         center.removeDeliveredNotifications(withIdentifiers: ids)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.refreshNotificationStatus() }
     }
 
     // MARK: Export (CSV wie in der Web-App)

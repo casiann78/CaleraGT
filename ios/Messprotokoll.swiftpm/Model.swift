@@ -270,3 +270,84 @@ func warnings(for r: Run) -> [Warning] {
     }
     return out
 }
+
+// MARK: - Darstellung
+
+extension Condition {
+    /// SF-Symbol für die Bedingung
+    var icon: String {
+        switch self {
+        case .kalt: return "snowflake"
+        case .angenehm: return "leaf.fill"
+        case .warm: return "flame.fill"
+        }
+    }
+}
+
+struct FeelingPoint: Identifiable {
+    let minute: Int
+    let value: Int
+    var id: Int { minute }
+}
+
+extension Run {
+    var phaseTitle: String {
+        switch phase {
+        case .setup: return "Vorbereitung"
+        case .rest: return "Ruhemessung läuft"
+        case .afterRest: return "Bereit für den Sport"
+        case .sport: return "Sport läuft"
+        case .ready: return "Ab in den Messbereich"
+        case .recovery: return "Erholung läuft"
+        case .done: return "Abgeschlossen"
+        case .aborted: return "Abgebrochen"
+        }
+    }
+
+    /// Schritt in der Anzeige: 0 Ruhe, 1 Sport, 2 Erholung, 3 Fertig (4 = alles erledigt)
+    var stepIndex: Int {
+        switch phase {
+        case .setup, .rest: return 0
+        case .afterRest, .sport: return 1
+        case .ready, .recovery: return 2
+        case .done: return 4
+        case .aborted: return 0
+        }
+    }
+
+    /// Bewertete Zeitpunkte nach Zeitpunkt 0 (ohne Ruhe, ohne übersprungene)
+    var feelingPoints: [FeelingPoint] {
+        ratingSlots.compactMap { s -> FeelingPoint? in
+            guard let v = ratings[String(s)]?.value else { return nil }
+            return FeelingPoint(minute: s, value: v)
+        }
+    }
+
+    var displayDate: String {
+        guard let d = Fmt.day.date(from: date) else { return date }
+        return Fmt.german.string(from: d)
+    }
+}
+
+extension Fmt {
+    static let german: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "de_DE")
+        f.dateFormat = "EE, d. MMM yyyy"
+        return f
+    }()
+}
+
+/// Farbe für einen Gefühlswert: −3 dunkelblau … 0 grau … +3 rot
+func feelingColor(_ v: Int?) -> Color {
+    guard let v = v else { return Color.secondary.opacity(0.25) }
+    switch v {
+    case ...(-3): return Color.indigo
+    case -2: return Color.blue
+    case -1: return Color.teal
+    case 0: return Color.gray
+    case 1: return Color.orange
+    case 2: return Color(red: 0.93, green: 0.36, blue: 0.2)
+    default: return Color.red
+    }
+}

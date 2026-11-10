@@ -8,57 +8,63 @@ struct RatingView: View {
 
     private var isRest: Bool { prompt.slot == "rest" }
 
+    private var conditionColor: Color {
+        store.run(prompt.runId)?.condition.color ?? Color.accentColor
+    }
+
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
-                Text(isRest ? "Bewertung in Ruhe" : "Bewertung: Minute \(prompt.slot)")
-                    .font(.largeTitle.bold())
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 12)
-                Text("„\(ratingQuestion)“")
-                    .font(.title3.weight(.semibold))
-                    .multilineTextAlignment(.center)
-                Text("Ehrlich und spontan antworten. Nicht vorher in die CALERA-App schauen.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+            VStack(spacing: 18) {
+                header
 
                 if !isRest {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(lateText(now: context.date))
-                            .font(.headline)
-                            .foregroundStyle(Color.red)
+                        let late = lateText(now: context.date)
+                        if !late.isEmpty {
+                            BannerView(icon: "clock.badge.exclamationmark", text: late, color: Color.red)
+                        }
                     }
                 }
 
-                ForEach(feelingScale) { option in
-                    Button {
-                        store.storeRating(prompt, value: option.value, skipped: false)
-                    } label: {
-                        HStack {
-                            Text(signedText(option.value))
-                                .font(.title2.bold().monospacedDigit())
-                                .frame(width: 56, alignment: .leading)
-                            Spacer()
-                            Text(option.label).font(.title3)
+                VStack(spacing: 10) {
+                    ForEach(feelingScale) { option in
+                        Button {
+                            store.storeRating(prompt, value: option.value, skipped: false)
+                        } label: {
+                            HStack {
+                                Text(signedText(option.value))
+                                    .font(.system(size: 28, weight: .bold, design: .rounded).monospacedDigit())
+                                    .frame(width: 64, alignment: .leading)
+                                Text(option.label)
+                                    .font(.title3.weight(.semibold))
+                                Spacer()
+                            }
+                            .foregroundStyle(Color.white)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 14)
+                            .frame(maxWidth: .infinity)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .fill(feelingColor(option.value).gradient)
+                            )
                         }
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 6)
-                        .frame(maxWidth: .infinity)
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(signedText(option.value)), \(option.label)")
                     }
-                    .buttonStyle(.bordered)
                 }
 
                 if isRest {
-                    Button("Schließen") { store.ratingPrompt = nil }
-                        .padding(.top, 8)
+                    Button("Später bewerten") { store.ratingPrompt = nil }
+                        .padding(.top, 4)
                 } else {
                     Button("Nicht bewertet (überspringen)", role: .destructive) { confirmSkip = true }
-                        .padding(.top, 8)
+                        .font(.subheadline)
+                        .padding(.top, 4)
                 }
             }
             .padding()
         }
+        .background(Color(uiColor: .systemGroupedBackground))
         .onAppear {
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
         }
@@ -71,9 +77,28 @@ struct RatingView: View {
         }
     }
 
+    private var header: some View {
+        VStack(spacing: 10) {
+            Text(isRest ? "In Ruhe" : "Minute \(prompt.slot)")
+                .font(.subheadline.bold())
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(conditionColor))
+            Text(ratingQuestion)
+                .font(.title2.bold())
+                .multilineTextAlignment(.center)
+            Text("Spontan antworten. Nicht vorher in die CALERA-App schauen.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.top, 20)
+    }
+
     private func lateText(now: Date) -> String {
         guard let run = store.run(prompt.runId), let t0 = run.t0, let minute = Int(prompt.slot) else { return "" }
         let late = now.ms - (t0 + Double(minute) * 60000)
-        return late > 15000 ? "Fällig seit \(durationString(late)) – bitte jetzt bewerten." : " "
+        return late > 15000 ? "Fällig seit \(durationString(late)). Bitte jetzt bewerten." : ""
     }
 }

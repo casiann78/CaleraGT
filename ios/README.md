@@ -25,8 +25,15 @@ Die App braucht keinen App Store. Sie wird mit Xcode direkt vom Mac auf das eige
 
 Mit einer kostenlosen Apple-ID läuft die App **7 Tage**. Danach einfach Schritt 7 wiederholen (iPhone anschließen, ▶ klicken). Die Daten bleiben dabei erhalten. Mit einem bezahlten Entwicklerkonto (99 $/Jahr) hält sie 1 Jahr.
 
+## Aufbau der App
+
+- **Übersicht:** Fortschritt pro Bedingung (Ziel 3 Durchläufe), Knöpfe für einen neuen Durchlauf, Liste aller Durchläufe mit farbigen Gefühlswerten.
+- **Durchlauf:** Reiter „Ablauf“ (Schrittanzeige, Uhr, Erholungsring, Gefühlsverlauf als Diagramm), „Kopfdaten“ und „Notizen“. Unten steht immer der Knopf für den nächsten Schritt.
+- **Einstellungen** (Zahnrad): Status der Mitteilungen, Test-Erinnerung, Export und Import, Sicherheitsregeln.
+
 ## Vor jedem Versuch
 
+- In den Einstellungen „Test-Erinnerung in 10 Sekunden“ drücken und das iPhone sperren. Kommt die Mitteilung mit Ton, ist alles bereit.
 - **Stummschalter aus** und **Fokus / Nicht stören aus**, sonst ist die Erinnerung lautlos (sie vibriert dann nur).
 - Lautstärke hoch.
 - Uhrzeit von iPhone und CALERA-Sensor vergleichen und die Abweichung unter „Notizen“ eintragen.
@@ -34,7 +41,7 @@ Mit einer kostenlosen Apple-ID läuft die App **7 Tage**. Danach einfach Schritt
 ## Daten
 
 - Gespeichert wird in der App auf dem iPhone (`protokoll.json`).
-- Export: Übersicht › „CSV-Dateien und Sicherung teilen“, dann z. B. per AirDrop an den Mac und in `protokolle/` ablegen.
+- Export: Zahnrad oben rechts › „CSV-Dateien und Sicherung teilen“, dann z. B. per AirDrop an den Mac und in `protokolle/` ablegen.
 - Die JSON-Sicherung hat dasselbe Format wie in der Web-App. Daten aus der Web-App lassen sich mit „Sicherung (JSON) laden“ übernehmen.
 
 ## Hinweis
