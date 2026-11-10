@@ -84,6 +84,7 @@ Der Wärmefluss ist beim Research-Gerät nur nach Vereinbarung mit greenTEG frei
 
 ```bash
 # app/index.html im Browser öffnen: Protokoll während des Versuchs (siehe app/README.md)
+python analyse/gefuehlswerte.py                    # Gefühlswerte: Diagramme + Tabelle (neuester Export in protokolle/)
 python analyse/auswerten.py data/raw/<datei>.csv   # Rohdaten umrechnen
 python analyse/vergleich.py                         # drei Bedingungen vergleichen
 ```
