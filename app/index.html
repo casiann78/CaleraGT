@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Messprotokoll Wärmefluss</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<!--
+  Messprotokoll-App für das Jugend-forscht-Projekt „Wärmefluss und Wärmeempfinden“.
+  - Kopfdaten pro Durchlauf erfassen (Datum, Raumtemperatur, Luftfeuchte, Training, Kleidung …)
+  - Ruhe- und Sportphase mit Uhrzeit festhalten
+  - Nach Bestätigung von Zeitpunkt 0: Erinnerung (Ton, Vibration) bei 0, 5, 10, 15 und 20 Min.
+  - Export als CSV für die Auswertung in analyse/ und als JSON-Sicherung
+  Speicherung: immer im Browser (localStorage). Als claude.ai-Artifact geöffnet zusätzlich
+  in der Datenbank des Artifacts, damit die Daten auf allen Geräten verfügbar sind.
+-->
+<style>
+  /* Layout: eine schmale Spalte für das Handy, Ablauf-Karte oben, Formulare darunter */
+  :root {
+    --bg: #f3f5f8; --card: #ffffff; --text: #1a1f26; --muted: #5a6370; --border: #d6dbe2;
+    --accent: #2b5fd9; --on-accent: #ffffff;
+    --kalt: #1f6fd1; --angenehm: #1f8f4e; --warm: #cf3a2f; --on-cond: #ffffff;
+    --danger: #c0352b; --on-danger: #ffffff; --ok: #1f8f4e;
+    --warn-bg: #fff4d6; --warn-text: #6b4e00; --danger-bg: #fde7e5; --info-bg: #e8f0fe;
+    --scrim: rgba(20, 25, 35, 0.45); --toast-bg: #1a1f26; --toast-text: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111418; --card: #1b1f25; --text: #e7eaee; --muted: #9aa3ae; --border: #2d333b;
+      --accent: #6c9bff; --on-accent: #0b1020;
+      --kalt: #5aa2ff; --angenehm: #4cc985; --warm: #ff6b5e; --on-cond: #0b1020;
+      --danger: #ff6b5e; --on-danger: #1a0d0c; --ok: #4cc985;
+      --warn-bg: #3a3015; --warn-text: #ffd77a; --danger-bg: #3d1c1a; --info-bg: #1a2640;
+      --scrim: rgba(0, 0, 0, 0.6); --toast-bg: #e7eaee; --toast-text: #111418;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111418; --card: #1b1f25; --text: #e7eaee; --muted: #9aa3ae; --border: #2d333b;
+    --accent: #6c9bff; --on-accent: #0b1020;
+    --kalt: #5aa2ff; --angenehm: #4cc985; --warm: #ff6b5e; --on-cond: #0b1020;
+    --danger: #ff6b5e; --on-danger: #1a0d0c; --ok: #4cc985;
+    --warn-bg: #3a3015; --warn-text: #ffd77a; --danger-bg: #3d1c1a; --info-bg: #1a2640;
+    --scrim: rgba(0, 0, 0, 0.6); --toast-bg: #e7eaee; --toast-text: #111418;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #app { max-width: 720px; margin: 0 auto; padding-block: 12px 80px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  h1 { font-size: 1.35rem; margin: 8px 0 4px; text-wrap: balance; }
+  h2 { font-size: 1.1rem; margin: 0 0 10px; text-wrap: balance; }
+  p { margin: 6px 0; }
+  code { font-size: .9em; }
+  .muted { color: var(--muted); font-size: .92rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin: 12px 0; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  button { font: inherit; cursor: pointer; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); padding: 10px 14px; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 600; }
+  button.big { width: 100%; padding: 16px; font-size: 1.1rem; }
+  button.danger { color: var(--danger); border-color: var(--danger); }
+  button.danger-fill { background: var(--danger); color: var(--on-danger); border-color: var(--danger); font-weight: 600; }
+  button.link { border: none; background: none; color: var(--accent); padding: 6px 0; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row > * { flex: 1 1 auto; }
+  .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; color: var(--on-cond); font-weight: 600; font-size: .9rem; }
+  .c-kalt, button.primary.c-kalt { background: var(--kalt); }
+  .c-angenehm, button.primary.c-angenehm { background: var(--angenehm); }
+  .c-warm, button.primary.c-warm { background: var(--warm); }
+  button.primary.c-kalt, button.primary.c-angenehm, button.primary.c-warm { color: var(--on-cond); border-color: transparent; }
+  .b-kalt { border-left: 6px solid var(--kalt); } .b-angenehm { border-left: 6px solid var(--angenehm); } .b-warm { border-left: 6px solid var(--warm); }
+  .t-kalt { color: var(--kalt); } .t-angenehm { color: var(--angenehm); } .t-warm { color: var(--warm); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid > * { min-width: 0; }
+  @media (max-width: 480px) { .grid { grid-template-columns: 1fr; } }
+  label.f { display: flex; flex-direction: column; gap: 4px; font-size: .9rem; color: var(--muted); }
+  label.f.wide { grid-column: 1 / -1; }
+  input, select, textarea { font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px; width: 100%; }
+  textarea { min-height: 70px; resize: vertical; }
+  label.check { display: flex; align-items: center; gap: 8px; }
+  label.check input { width: auto; }
+  .msg { border-radius: 10px; padding: 9px 12px; margin: 8px 0; font-size: .93rem; }
+  .msg.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .msg.danger { background: var(--danger-bg); color: var(--danger); font-weight: 600; }
+  .msg.info { background: var(--info-bg); }
+  .clock { font-size: 2.6rem; font-weight: 700; font-variant-numeric: tabular-nums; text-align: center; margin: 4px 0; }
+  .next { text-align: center; font-size: 1.05rem; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .93rem; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--border); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .slots { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
+  .slot { border: 1px solid var(--border); border-radius: 10px; padding: 6px 2px; text-align: center; font-size: .85rem; }
+  .slot b { display: block; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+  .slot.done { border-color: var(--ok); }
+  .slot.due { border-color: var(--danger); background: var(--danger-bg); }
+  .runlist { display: flex; flex-direction: column; gap: 6px; }
+  .runitem { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; text-align: left; }
+  .runitem > span:first-child { min-width: 0; }
+  .badge { font-size: .8rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+  .badge.ok { color: var(--ok); border-color: var(--ok); }
+  .badge.bad { color: var(--danger); border-color: var(--danger); }
+  .badge.run { color: var(--accent); border-color: var(--accent); }
+  .progress { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .sync { font-size: .85rem; color: var(--muted); margin: 4px 0 0; }
+  .sync.error { color: var(--danger); font-weight: 600; }
+  /* Bewertungs-Overlay (ganzer Bildschirm) */
+  #overlay { position: fixed; inset: 0; background: var(--bg); z-index: 10; overflow-y: auto;
+    padding: calc(16px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px))
+             calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+  #overlay .inner { max-width: 520px; margin: 0 auto; }
+  #overlay h2 { font-size: 1.5rem; text-align: center; margin-top: 8px; }
+  .question { font-size: 1.2rem; text-align: center; font-weight: 600; margin: 14px 0; }
+  .scale { display: flex; flex-direction: column; gap: 8px; }
+  .scale button { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; font-size: 1.1rem; }
+  .scale button b { font-size: 1.3rem; min-width: 2.5em; text-align: left; font-variant-numeric: tabular-nums; }
+  /* Bestätigungsdialog (statt confirm/prompt, die im Artifact-Viewer nicht funktionieren) */
+  #dialog { position: fixed; inset: 0; z-index: 30; background: var(--scrim); display: flex; align-items: center; justify-content: center;
+    padding: calc(16px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px))
+             calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+  .dlg { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; width: 100%; max-width: 440px;
+    display: flex; flex-direction: column; gap: 12px; }
+  .dlg h2 { margin: 0; }
+  .dlg p { margin: 0; white-space: pre-line; }
+  #toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+    background: var(--toast-bg); color: var(--toast-text); padding: 10px 16px; border-radius: 10px; z-index: 40; max-width: 90vw; }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="overlay" role="dialog" aria-modal="true" aria-label="Bewertung" hidden></div>
+<div id="dialog" hidden></div>
+<div id="toast" role="status" hidden></div>
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+
+<script>
+'use strict';
+
+// ---------- Konstanten ----------
+const STORE_KEY = 'jufo-calera-protokoll-v1';
+const SLOTS = [0, 5, 10, 15, 20];               // Bewertungszeitpunkte in Minuten nach Zeitpunkt 0
+const TARGET_RUNS = 3;                          // mindestens 3 Durchläufe pro Bedingung
+const CONDITIONS = {
+  kalt:     { label: 'Kalt',     target: '10–12 °C', min: 10, max: 12 },
+  angenehm: { label: 'Angenehm', target: '21–22 °C', min: 21, max: 22 },
+  warm:     { label: 'Warm',     target: '25–28 °C', min: 25, max: 28 },
+};
+const SCALE = [[3, 'sehr heiß'], [2, 'warm'], [1, 'etwas warm'], [0, 'neutral'],
+               [-1, 'etwas kalt'], [-2, 'kalt'], [-3, 'sehr kalt']];
+const QUESTION = 'Wie warm oder kalt fühlt sich mein ganzer Körper gerade an?';
+const IN_VIEWER = !!(window.claude && typeof window.claude.use === 'function');
+
+// ---------- Zustand ----------
+let state = loadLocal();
+let view = { name: 'home' };
+let ratingTarget = null;      // { runId, slot } – slot ist 'rest' oder eine Minute aus SLOTS
+let audioCtx = null;
+let wakeLock = null;
+let lastAlarm = 0;
+const notifiedSlots = new Set();
+const baseTitle = document.title;
+
+// ---------- Speicherung ----------
+// 1) localStorage: schnelle Kopie auf diesem Gerät
+// 2) Artifact-Datenbank (nur im claude.ai-Viewer): ein Dokument pro Durchlauf unter runs/<id>
+let db = null;
+let syncState = IN_VIEWER ? 'connecting' : 'local';
+const writeTimers = {};
+const inflight = {};
+const writeAgain = {};
+
+function loadLocal() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (s && Array.isArray(s.runs)) return s;
+  } catch (e) { /* kein Speicher verfügbar */ }
+  return { runs: [] };
+}
+function saveLocal() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) { /* z. B. privater Modus */ }
+}
+function isPending(id) { return !!writeTimers[id] || !!inflight[id]; }
+function persist(r, delayMs = 0) {
+  saveLocal();
+  if (!db || !r) return;
+  clearTimeout(writeTimers[r.id]);
+  setSync('saving');
+  writeTimers[r.id] = setTimeout(() => { delete writeTimers[r.id]; flush(r.id); }, delayMs);
+}
+function persistDelete(id) {
+  saveLocal();
+  if (!db) return;
+  clearTimeout(writeTimers[id]); delete writeTimers[id];
+  flush(id);
+}
+async function flush(id) {
+  if (inflight[id]) { writeAgain[id] = true; return; }
+  inflight[id] = true;
+  const r = getRun(id);
+  try {
+    if (r) await db.doc('runs/' + id).set(JSON.parse(JSON.stringify(r)));
+    else await db.doc('runs/' + id).delete();
+    if (!Object.keys(writeTimers).length) setSync('synced');
+  } catch (e) {
+    setSync('error', e && e.code);
+  } finally {
+    inflight[id] = false;
+    if (writeAgain[id]) { writeAgain[id] = false; flush(id); }
+  }
+}
+function setSync(s, code) {
+  syncState = s;
+  const el = document.getElementById('sync');
+  if (!el) return;
+  const texts = {
+    local: 'Gespeichert nur in diesem Browser. Nach jedem Versuch exportieren.',
+    connecting: 'Verbinde mit dem Speicher …',
+    saving: 'Speichert …',
+    synced: '✓ Gespeichert (im Artifact, auf allen Geräten)',
+    error: 'Speichern im Artifact fehlgeschlagen' + (code ? ' (' + code + ')' : '') + '. Daten sind auf diesem Gerät gesichert, bitte exportieren.',
+  };
+  el.textContent = texts[s] || '';
+  el.className = 'sync' + (s === 'error' ? ' error' : '');
+}
+function stableStr(v) {
+  if (Array.isArray(v)) return '[' + v.map(stableStr).join(',') + ']';
+  if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + stableStr(v[k])).join(',') + '}';
+  return JSON.stringify(v);
+}
+async function connectDb() {
+  if (!IN_VIEWER) return;
+  try { db = await window.claude.use('db'); } catch (e) { db = null; }
+  if (!db) { setSync('local'); return; }
+  let firstConfirmed = false;
+  const timeout = setTimeout(() => { if (!firstConfirmed) setSync('error', 'keine Verbindung'); }, 10000);
+  db.collection('runs').onSnapshot((snap) => {
+    let changed = false;
+    for (const ch of snap.docChanges()) {
+      const id = ch.doc.id;
+      if (isPending(id)) continue;                    // eigene, noch nicht bestätigte Änderung hat Vorrang
+      const local = getRun(id);
+      if (ch.type === 'removed') {
+        if (local) { state.runs = state.runs.filter((r) => r.id !== id); changed = true; }
+      } else {
+        const remote = JSON.parse(JSON.stringify(ch.doc.data()));
+        if (!local) { state.runs.push(remote); changed = true; }
+        else if (stableStr(local) !== stableStr(remote)) { Object.keys(local).forEach((k) => delete local[k]); Object.assign(local, remote); changed = true; }
+      }
+    }
+    if (!snap.metadata.fromCache && !firstConfirmed) {
+      firstConfirmed = true; clearTimeout(timeout);
+      const remoteIds = new Set(snap.docs.map((d) => d.id));
+      const localOnly = state.runs.filter((r) => !remoteIds.has(r.id));
+      localOnly.forEach((r) => persist(r));           // vorher nur lokal gespeicherte Durchläufe hochladen
+      if (!localOnly.length) setSync('synced');
+    }
+    if (changed) { saveLocal(); render(); }
+  }, (e) => { clearTimeout(timeout); setSync('error', e && e.code); });
+}
+
+// ---------- Hilfsfunktionen ----------
+const $ = (sel) => document.querySelector(sel);
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const pad = (n) => String(n).padStart(2, '0');
+const getRun = (id) => state.runs.find((r) => r.id === id);
+const fmtSigned = (v) => (v === null || v === undefined) ? '–' : (v > 0 ? '+' + v : String(v));
+
+function fmtTime(ms) { if (!ms) return ''; const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+function fmtDateTime(ms) { if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${fmtTime(ms)}`; }
+function fmtDur(ms) { const s = Math.max(0, Math.floor(ms / 1000)); return `${pad(Math.floor(s / 60))}:${pad(s % 60)}`; }
+function today() { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function num(v) { if (v === '' || v === null || v === undefined) return null; const n = Number(String(v).replace(',', '.')); return Number.isFinite(n) ? n : null; }
+
+function toast(text) {
+  const t = $('#toast'); t.textContent = text; t.hidden = false;
+  clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 3500);
+}
+
+// Eigener Dialog: gibt true (bzw. den eingegebenen Text) oder null zurück
+function ask({ title, text = '', ok = 'OK', cancel = 'Zurück', input = null, danger = false }) {
+  return new Promise((resolve) => {
+    const d = $('#dialog');
+    d.innerHTML = `<div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title">
+      <h2 id="dlg-title">${esc(title)}</h2>
+      ${text ? `<p>${esc(text)}</p>` : ''}
+      ${input !== null ? `<input id="dlg-input" type="text" placeholder="${esc(input)}">` : ''}
+      <div class="row"><button type="button" id="dlg-cancel">${esc(cancel)}</button>
+      <button type="button" id="dlg-ok" class="${danger ? 'danger-fill' : 'primary'}">${esc(ok)}</button></div></div>`;
+    d.hidden = false;
+    const done = (v) => { d.hidden = true; d.innerHTML = ''; resolve(v); };
+    $('#dlg-cancel').addEventListener('click', () => done(null));
+    $('#dlg-ok').addEventListener('click', () => done(input !== null ? $('#dlg-input').value.trim() : true));
+    (input !== null ? $('#dlg-input') : $('#dlg-ok')).focus();
+  });
+}
+
+function phase(r) {
+  if (r.aborted) return 'aborted';
+  if (r.finished) return 'done';
+  if (r.t0) return 'recovery';
+  if (r.sportStart && !r.sportEnd) return 'sport';
+  if (r.sportEnd) return 'ready';
+  if (r.restStart && !r.restEnd) return 'rest';
+  if (r.restEnd) return 'afterRest';
+  return 'setup';
+}
+function recoveryRun() { return state.runs.find((r) => phase(r) === 'recovery'); }
+function completedRuns(cond) { return state.runs.filter((r) => r.condition === cond && r.finished && !r.aborted).length; }
+
+// ---------- Ton, Vibration, Bildschirm wach halten, Benachrichtigung ----------
+function unlockAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) { /* kein Ton möglich */ }
+}
+function beep() {
+  if (!audioCtx) return;
+  try {
+    const t = audioCtx.currentTime;
+    [0, 0.28, 0.56].forEach((d) => {
+      const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+      o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
+      g.gain.setValueAtTime(0.0001, t + d);
+      g.gain.exponentialRampToValueAtTime(0.5, t + d + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.2);
+      o.start(t + d); o.stop(t + d + 0.22);
+    });
+  } catch (e) { /* ignorieren */ }
+}
+function vibrate(pattern) { try { navigator.vibrate && navigator.vibrate(pattern); } catch (e) { /* ignorieren */ } }
+async function keepAwake(on) {
+  try {
+    if (on && 'wakeLock' in navigator && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch (e) { /* nicht unterstützt oder abgelehnt */ }
+}
+function requestNotify() {
+  try {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Promise.resolve(Notification.requestPermission()).catch(() => {});
+    }
+  } catch (e) { /* ignorieren */ }
+}
+function notify(text) {
+  try {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('Messprotokoll: Bewertung fällig', { body: text, tag: 'bewertung', requireInteraction: true });
+    }
+  } catch (e) { /* auf manchen Handys nicht möglich – Ton/Vibration reichen */ }
+}
+function alarm(r, slot) {
+  const now = Date.now();
+  document.title = '⏰ Bewertung fällig!';
+  if (now - lastAlarm < 5000) return;     // alle 5 s wiederholen, bis bewertet
+  lastAlarm = now;
+  beep();
+  vibrate([400, 150, 400]);
+  const key = r.id + ':' + slot;
+  if (document.hidden && !notifiedSlots.has(key)) {
+    notifiedSlots.add(key);
+    notify(`Minute ${slot}: ${QUESTION}`);
+  }
+}
+
+// ---------- Takt (jede Sekunde) ----------
+function tick() {
+  const r = recoveryRun();
+  let due;
+  if (r) {
+    const elapsed = Date.now() - r.t0;
+    due = SLOTS.find((s) => !r.ratings[s] && elapsed >= s * 60000);
+    if (due !== undefined) {
+      if (!ratingTarget || ratingTarget.runId !== r.id || ratingTarget.slot !== due) openRating(r.id, due);
+      alarm(r, due);
+    }
+  }
+  if (due === undefined) document.title = baseTitle;
+  updateLive();
+}
+function updateLive() {
+  document.querySelectorAll('[data-since]').forEach((el) => {
+    el.textContent = fmtDur(Date.now() - Number(el.dataset.since));
+  });
+  const r = recoveryRun();
+  const nextEl = $('#live-next');
+  if (r && nextEl) {
+    const next = SLOTS.find((s) => !r.ratings[s]);
+    if (next === undefined) nextEl.textContent = 'Alle Bewertungen erledigt.';
+    else {
+      const rem = r.t0 + next * 60000 - Date.now();
+      nextEl.textContent = rem > 0 ? `Nächste Bewertung (Min. ${next}) in ${fmtDur(rem)}` : `Bewertung Min. ${next} ist jetzt fällig!`;
+    }
+  }
+  const od = $('#overdue');
+  if (od && ratingTarget && ratingTarget.slot !== 'rest') {
+    const rr = getRun(ratingTarget.runId);
+    const late = rr ? Date.now() - (rr.t0 + ratingTarget.slot * 60000) : 0;
+    od.textContent = late > 15000 ? `Fällig seit ${fmtDur(late)} – bitte jetzt bewerten.` : '';
+  }
+}
+
+// ---------- Darstellung ----------
+function render() {
+  // Fokus und Cursor im gerade bearbeiteten Feld erhalten
+  const a = document.activeElement;
+  const focusField = a && a.dataset && a.dataset.field;
+  let sel = null;
+  try { sel = focusField ? [a.selectionStart, a.selectionEnd] : null; } catch (e) { sel = null; }
+  $('#app').innerHTML = view.name === 'run' && getRun(view.id) ? renderRun(getRun(view.id)) : renderHome();
+  if (focusField) {
+    const el = document.querySelector(`[data-field="${focusField}"]`);
+    if (el) { el.focus(); try { if (sel && sel[0] !== null) el.setSelectionRange(sel[0], sel[1]); } catch (e) { /* z. B. bei number */ } }
+  }
+  setSync(syncState);
+  updateLive();
+}
+
+function statusBadge(r) {
+  const p = phase(r);
+  if (p === 'done') return '<span class="badge ok">fertig</span>';
+  if (p === 'aborted') return '<span class="badge bad">abgebrochen</span>';
+  if (p === 'setup') return '<span class="badge">angelegt</span>';
+  return '<span class="badge run">läuft</span>';
+}
+
+function renderHome() {
+  const active = state.runs.filter((r) => !['done', 'aborted', 'setup'].includes(phase(r)));
+  let html = `
+    <h1>Messprotokoll Wärmefluss</h1>
+    <p class="muted">Jugend forscht 2027 · CALERA Research · Gefühl nach dem Sport vs. Wärmefluss</p>
+    <p class="sync" id="sync"></p>`;
+  if (active.length) {
+    html += `<div class="msg warn">Laufender Durchlauf: ` + active.map((r) =>
+      `<button class="link" data-act="open" data-id="${r.id}">${CONDITIONS[r.condition].label} Nr. ${esc(r.runNo)} öffnen</button>`).join(' ') + `</div>`;
+  }
+  html += `<section class="card"><h2>Neuer Durchlauf</h2><div class="row">` +
+    Object.entries(CONDITIONS).map(([k, c]) =>
+      `<button class="primary c-${k}" data-act="new" data-cond="${k}">${c.label}<br><small>${c.target}</small></button>`).join('') +
+    `</div></section>`;
+
+  for (const [k, c] of Object.entries(CONDITIONS)) {
+    const runs = state.runs.filter((r) => r.condition === k).sort((a, b) => (num(a.runNo) ?? 0) - (num(b.runNo) ?? 0));
+    const done = completedRuns(k);
+    html += `<section class="card b-${k}">
+      <div class="top"><h2 class="t-${k}" style="margin:0">${c.label} <span class="muted">(${c.target})</span></h2>
+      <span class="progress ${done >= TARGET_RUNS ? 't-angenehm' : ''}">${done}/${TARGET_RUNS} fertig</span></div>`;
+    if (!runs.length) html += `<p class="muted">Noch keine Durchläufe. Oben „${c.label}“ antippen, um den ersten anzulegen.</p>`;
+    else {
+      html += `<div class="runlist" style="margin-top:10px">` + runs.map((r) => {
+        const feel = ['rest', ...SLOTS].map((s) => fmtSigned(r.ratings[s]?.value)).join(' ');
+        return `<button class="runitem" data-act="open" data-id="${r.id}">
+          <span><b>Nr. ${esc(r.runNo)}</b> · ${esc(r.date)}${r.roomTempStart !== '' && r.roomTempStart != null ? ' · ' + esc(r.roomTempStart) + ' °C' : ''}
+          <br><small class="muted">Gefühl R|0|5|10|15|20: ${feel}</small>${r.outlier ? '<br><small class="t-warm">⚑ als Ausreißer markiert</small>' : ''}</span>
+          ${statusBadge(r)}</button>`;
+      }).join('') + `</div>`;
+    }
+    html += `</section>`;
+  }
+
+  html += `<section class="card"><h2>Daten exportieren</h2>
+    <p class="muted">CSV-Dateien nach jedem Versuch speichern und in <code>protokolle/</code> im Repository ablegen.</p>
+    <div class="row" style="margin-top:8px">
+      <button data-act="exportRuns">CSV: Durchläufe</button>
+      <button data-act="exportRatings">CSV: Gefühlswerte</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button data-act="backup">Sicherung (JSON) speichern</button>
+      <button data-act="import">Sicherung laden</button>
+    </div></section>
+    <section class="card"><h2>Sicherheit</h2>
+    <p>Versuche nur mit Absprache der Eltern oder des Betreuers. Raumtemperatur nicht unter 8 °C und nicht über 30 °C.
+    Keine Sauna, heiße Dusche oder kaltes Wasser direkt nach dem Sport. <b>Bei Schwindel oder Frösteln sofort abbrechen.</b></p></section>`;
+  return html;
+}
+
+function field(r, key, label, type = 'text', attrs = '', wide = false) {
+  return `<label class="f${wide ? ' wide' : ''}"><span>${label}</span>
+    <input type="${type}" id="f-${key}" data-field="${key}" value="${esc(r[key] ?? '')}" ${attrs}></label>`;
+}
+
+function warnings(r) {
+  const c = CONDITIONS[r.condition];
+  const out = [];
+  for (const [key, name] of [['roomTempStart', 'Start'], ['roomTempEnd', 'Ende']]) {
+    const t = num(r[key]);
+    if (t === null) continue;
+    if (t < 8 || t > 30) out.push(`<div class="msg danger">Raumtemperatur ${name} ${t} °C: Sicherheitsgrenze (8–30 °C) überschritten! Versuch so nicht durchführen.</div>`);
+    else if (t < c.min - 1 || t > c.max + 1) out.push(`<div class="msg warn">Raumtemperatur ${name} ${t} °C liegt außerhalb des Zielbereichs ${c.target}. Trotzdem den tatsächlichen Wert notieren.</div>`);
+  }
+  const h = num(r.humidity);
+  if (h !== null && (h < 0 || h > 100)) out.push(`<div class="msg warn">Luftfeuchte muss zwischen 0 und 100 % liegen.</div>`);
+  if (r.condition === 'warm') out.push(`<div class="msg info">Warm selbst erzeugen (Heizung/Heizlüfter oder Auto mit Heizung). Keine Sauna, heiße Dusche oder Dampf. Tatsächlich gemessene Temperatur notieren.</div>`);
+  return out.join('');
+}
+
+function renderPhase(r) {
+  const p = phase(r);
+  const restRated = r.ratings.rest ? `Ruhe-Gefühl: <b>${fmtSigned(r.ratings.rest.value)}</b>` : 'Ruhe-Gefühl noch nicht bewertet';
+  let body = '';
+  if (p === 'setup') {
+    body = `<p>1. Kopfdaten unten ausfüllen (mindestens Raumtemperatur Start).</p>
+      <p>2. Sensor anlegen und Ruhemessung beginnen (10–15 Min.).</p>
+      <button class="primary big" data-act="restStart">Ruhemessung starten</button>`;
+  } else if (p === 'rest') {
+    body = `<p class="muted">Ruhemessung seit ${fmtTime(r.restStart)} · Ziel 10–15 Min.</p>
+      <div class="clock" data-since="${r.restStart}">00:00</div>
+      <p>${restRated}</p>
+      <div class="row"><button data-act="rateRest">Ruhe-Gefühl bewerten</button>
+      <button class="primary" data-act="restEnd">Ruhemessung beenden</button></div>`;
+  } else if (p === 'afterRest') {
+    body = `<p>Ruhemessung ${fmtTime(r.restStart)}–${fmtTime(r.restEnd)} · ${restRated}</p>
+      ${r.ratings.rest ? '' : '<button data-act="rateRest" style="margin-bottom:8px">Ruhe-Gefühl bewerten</button>'}
+      <p>3. Sport machen (z. B. 30 Min., immer gleiche Intensität).</p>
+      <button class="primary big" data-act="sportStart">Sport starten</button>`;
+  } else if (p === 'sport') {
+    body = `<p class="muted">Sport seit ${fmtTime(r.sportStart)}</p>
+      <div class="clock" data-since="${r.sportStart}">00:00</div>
+      <button class="primary big" data-act="sportEnd">Sport beendet</button>`;
+  } else if (p === 'ready') {
+    body = `<p>Sport ${fmtTime(r.sportStart)}–${fmtTime(r.sportEnd)}.</p>
+      <p><b>Sofort in den Messbereich gehen.</b> Sobald du dort bist, Zeitpunkt 0 bestätigen. Danach wirst du bei 0, 5, 10, 15 und 20 Min. erinnert.</p>
+      <button class="primary big" data-act="t0">Ich bin im Messbereich – Zeitpunkt 0 bestätigen</button>`;
+  } else if (p === 'recovery') {
+    const elapsed = Date.now() - r.t0;
+    const allRated = SLOTS.every((s) => r.ratings[s]);
+    body = `<p class="muted">Zeitpunkt 0: ${fmtTime(r.t0)} · Bildschirm anlassen, diese Seite geöffnet lassen.</p>
+      <div class="clock" data-since="${r.t0}">00:00</div>
+      <p class="next" id="live-next"></p>
+      <div class="slots">` + SLOTS.map((s) => {
+        const v = r.ratings[s];
+        const cls = v ? 'done' : (elapsed >= s * 60000 ? 'due' : '');
+        return `<div class="slot ${cls}">${s} Min.<b>${v ? (v.skipped ? '×' : fmtSigned(v.value)) : '·'}</b></div>`;
+      }).join('') + `</div>
+      <div class="msg info">Erst bewerten, dann Kurve ansehen. Während des Versuchs nicht in die CALERA-App schauen.</div>`;
+    if (allRated) {
+      body += `<p><b>Fertig!</b> Jetzt Raumtemperatur am Ende messen und eintragen.</p>
+        ${field(r, 'roomTempEnd', 'Raumtemperatur Ende [°C]', 'text', 'inputmode="decimal"')}
+        <button class="primary big" style="margin-top:10px" data-act="finish">Durchlauf abschließen</button>`;
+    }
+    body += `<div class="row" style="margin-top:10px"><button data-act="testSound">🔔 Ton testen</button></div>`;
+  } else if (p === 'done') {
+    body = `<p class="t-angenehm"><b>Durchlauf abgeschlossen.</b></p>
+      <p class="muted">Zeitpunkt 0: ${fmtDateTime(r.t0)}. Sensor-CSV nach <code>data/raw/</code> kopieren und Dateinamen unten eintragen.</p>`;
+  } else if (p === 'aborted') {
+    body = `<div class="msg danger">Abgebrochen um ${fmtTime(r.abortedAt)}${r.abortReason ? ': ' + esc(r.abortReason) : ''}</div>
+      <p class="muted">Der Durchlauf bleibt gespeichert und wird beim Export als „aborted“ markiert.</p>`;
+  }
+  const canAbort = ['rest', 'afterRest', 'sport', 'ready', 'recovery'].includes(p);
+  return `<section class="card b-${r.condition}"><h2>Ablauf</h2>${body}
+    ${p === 'recovery' || p === 'sport' ? '<div class="msg warn">Bei Schwindel oder Frösteln sofort abbrechen.</div>' : ''}
+    ${canAbort ? '<button class="danger" style="margin-top:6px" data-act="abort">Versuch abbrechen</button>' : ''}</section>`;
+}
+
+function renderRatingsTable(r) {
+  const rows = ['rest', ...SLOTS].map((s) => {
+    const v = r.ratings[s];
+    const label = s === 'rest' ? 'Ruhe' : `${s} Min.`;
+    let delay = '';
+    if (v && s !== 'rest' && typeof v.delay_s === 'number') delay = v.delay_s > 0 ? `+${v.delay_s} s` : '';
+    return `<tr><td>${label}</td><td class="num">${v ? (v.skipped ? 'nicht bewertet' : fmtSigned(v.value)) : '–'}</td>
+      <td class="num">${v ? fmtTime(v.time) : ''}</td><td class="num">${delay}</td></tr>`;
+  }).join('');
+  return `<section class="card"><h2>Gefühlswerte (−3 sehr kalt … +3 sehr heiß)</h2>
+    <div class="tablewrap"><table><thead><tr><th>Zeitpunkt</th><th class="num">Wert</th><th class="num">Uhrzeit</th><th class="num">Verspätung</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    <p class="muted">Vertippt? Nicht nachträglich ändern, sondern unter „Notizen“ vermerken.</p></section>`;
+}
+
+function renderRun(r) {
+  const c = CONDITIONS[r.condition];
+  return `
+    <div class="top"><button class="link" data-act="home">← Übersicht</button>
+      <span class="pill c-${r.condition}">${c.label} · Nr. ${esc(r.runNo)}</span></div>
+    <p class="sync" id="sync"></p>
+    ${renderPhase(r)}
+    <section class="card"><h2>Kopfdaten</h2>
+      <div class="grid">
+        <label class="f"><span>Bedingung</span><select id="f-condition" data-field="condition">
+          ${Object.entries(CONDITIONS).map(([k, cc]) => `<option value="${k}" ${k === r.condition ? 'selected' : ''}>${cc.label} (${cc.target})</option>`).join('')}
+        </select></label>
+        ${field(r, 'runNo', 'Durchlauf-Nr.', 'number', 'min="1" inputmode="numeric"')}
+        ${field(r, 'date', 'Datum', 'date')}
+        ${field(r, 'humidity', 'Luftfeuchte [%]', 'text', 'inputmode="decimal"')}
+        ${field(r, 'roomTempStart', 'Raumtemperatur Start [°C]', 'text', 'inputmode="decimal"')}
+        ${phase(r) === 'recovery' ? '' : field(r, 'roomTempEnd', 'Raumtemperatur Ende [°C]', 'text', 'inputmode="decimal"')}
+        ${field(r, 'training', 'Training (Art, Dauer, Intensität)', 'text', 'placeholder="z. B. 30 Min. Joggen, mittel"', true)}
+        ${field(r, 'clothing', 'Kleidung', 'text', 'placeholder="z. B. T-Shirt, kurze Hose"', true)}
+        ${field(r, 'location', 'Ort / wie wurde die Temperatur erzeugt?', 'text', 'placeholder="z. B. Bad mit Heizlüfter"', true)}
+        ${field(r, 'sensorFile', 'Name der Sensor-CSV (data/raw/)', 'text', '', true)}
+      </div>
+      <div id="warn">${warnings(r)}</div>
+    </section>
+    ${renderRatingsTable(r)}
+    <section class="card"><h2>Notizen und Auffälligkeiten</h2>
+      <label class="f wide"><span>Notizen (Besonderheiten, Störungen, Uhrzeit-Abweichung Handy/Sensor …)</span>
+        <textarea id="f-notes" data-field="notes">${esc(r.notes)}</textarea></label>
+      <label class="check" style="margin-top:10px"><input type="checkbox" id="f-outlier" data-field="outlier" ${r.outlier ? 'checked' : ''}> Als Ausreißer / fehlerhafte Messung markieren</label>
+      <label class="f wide" style="margin-top:6px"><span>Begründung</span>
+        <input type="text" id="f-outlierReason" data-field="outlierReason" value="${esc(r.outlierReason)}"></label>
+    </section>
+    <section class="card"><button class="danger" data-act="delete">Durchlauf löschen</button>
+      <p class="muted">Abgebrochene oder fehlerhafte Durchläufe besser behalten und markieren statt löschen.</p></section>`;
+}
+
+// ---------- Bewertungs-Overlay ----------
+function openRating(runId, slot) {
+  ratingTarget = { runId, slot };
+  const isRest = slot === 'rest';
+  const o = $('#overlay');
+  o.innerHTML = `<div class="inner">
+    <h2>${isRest ? 'Bewertung in Ruhe' : `Bewertung: Minute ${slot}`}</h2>
+    <p class="question">„${QUESTION}“</p>
+    <p class="muted" style="text-align:center">Ehrlich und spontan antworten. Nicht vorher in die CALERA-App schauen.</p>
+    <p id="overdue" class="t-warm" style="text-align:center;font-weight:600"></p>
+    <div class="scale">${SCALE.map(([v, l]) =>
+      `<button data-act="rate" data-value="${v}"><b>${fmtSigned(v)}</b><span>${l}</span></button>`).join('')}</div>
+    <div class="row" style="margin-top:14px">
+      ${isRest ? '<button data-act="closeRating">Schließen</button>' : '<button data-act="skipRating">Nicht bewertet (überspringen)</button>'}
+    </div></div>`;
+  o.hidden = false;
+  o.scrollTop = 0;
+  updateLive();
+}
+function closeRating() {
+  ratingTarget = null;
+  $('#overlay').hidden = true;
+  $('#overlay').innerHTML = '';
+}
+function storeRating(value, skipped) {
+  if (!ratingTarget) return;
+  const r = getRun(ratingTarget.runId);
+  const slot = ratingTarget.slot;
+  const now = Date.now();
+  const entry = { value: skipped ? null : value, time: now };
+  if (skipped) entry.skipped = true;
+  if (slot !== 'rest') entry.delay_s = Math.round((now - (r.t0 + slot * 60000)) / 1000);
+  r.ratings[slot] = entry;
+  persist(r);
+  closeRating();
+  document.title = baseTitle;
+  render();
+  toast(skipped ? 'Als „nicht bewertet“ gespeichert.' : `Gespeichert: ${fmtSigned(value)}`);
+}
+
+// ---------- Export ----------
+function csvCell(v) {
+  const s = v === null || v === undefined ? '' : String(v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function toCsv(header, rows) { return [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\n') + '\n'; }
+async function saveFile(filename, text, mime) {
+  if (IN_VIEWER) {
+    let dl = null;
+    try { dl = await window.claude.use('downloads'); } catch (e) { dl = null; }
+    if (!dl) { toast('Speichern als Datei ist hier nicht verfügbar.'); return; }
+    try { await dl.save({ filename, data: text }); toast('Gespeichert: ' + filename); }
+    catch (e) { if (!e || e.code !== 'declined') toast('Datei konnte nicht gespeichert werden' + (e && e.code ? ' (' + e.code + ')' : '') + '.'); }
+    return;
+  }
+  // Lokal geöffnet: normaler Browser-Download
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: mime })); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function status(r) { return r.aborted ? 'aborted' : r.finished ? 'done' : 'incomplete'; }
+function sortedRuns() {
+  const order = Object.keys(CONDITIONS);
+  return [...state.runs].sort((a, b) => order.indexOf(a.condition) - order.indexOf(b.condition) || (num(a.runNo) ?? 0) - (num(b.runNo) ?? 0));
+}
+function exportRuns() {
+  const header = ['condition', 'run_no', 'date', 'room_temp_start_c', 'room_temp_end_c', 'humidity_pct', 'training', 'clothing',
+    'location', 'sensor_file', 'rest_start', 'rest_end', 'sport_start', 'sport_end', 't0',
+    'feel_rest', ...SLOTS.map((s) => 'feel_' + s), 'status', 'abort_reason', 'outlier', 'outlier_reason', 'notes'];
+  const rows = sortedRuns().map((r) => [r.condition, r.runNo, r.date, num(r.roomTempStart), num(r.roomTempEnd), num(r.humidity),
+    r.training, r.clothing, r.location, r.sensorFile, fmtDateTime(r.restStart), fmtDateTime(r.restEnd),
+    fmtDateTime(r.sportStart), fmtDateTime(r.sportEnd), fmtDateTime(r.t0),
+    r.ratings.rest?.value, ...SLOTS.map((s) => r.ratings[s]?.value), status(r), r.abortReason,
+    r.outlier ? 1 : 0, r.outlierReason, r.notes]);
+  return saveFile(`protokoll_durchlaeufe_${today()}.csv`, toCsv(header, rows), 'text/csv;charset=utf-8');
+}
+function exportRatings() {
+  const header = ['condition', 'run_no', 'date', 'minute', 'feel', 'rated_at', 'delay_s', 'skipped', 'status', 'outlier'];
+  const rows = [];
+  for (const r of sortedRuns()) {
+    for (const s of ['rest', ...SLOTS]) {
+      const v = r.ratings[s];
+      if (!v) continue;
+      rows.push([r.condition, r.runNo, r.date, s, v.value, fmtDateTime(v.time),
+        v.delay_s ?? '', v.skipped ? 1 : 0, status(r), r.outlier ? 1 : 0]);
+    }
+  }
+  return saveFile(`protokoll_gefuehlswerte_${today()}.csv`, toCsv(header, rows), 'text/csv;charset=utf-8');
+}
+function backup() {
+  return saveFile(`protokoll_sicherung_${today()}.json`, JSON.stringify(state, null, 2), 'application/json');
+}
+function importBackup(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data || !Array.isArray(data.runs)) throw new Error('kein gültiges Format');
+      let added = 0;
+      for (const r of data.runs) {
+        if (r && r.id && r.condition in CONDITIONS && !getRun(r.id)) { r.ratings = r.ratings || {}; state.runs.push(r); persist(r); added++; }
+      }
+      saveLocal(); render();
+      toast(`${added} Durchläufe hinzugefügt (bereits vorhandene übersprungen).`);
+    } catch (e) { toast('Datei konnte nicht gelesen werden: ' + e.message); }
+  };
+  reader.readAsText(file);
+}
+
+// ---------- Aktionen ----------
+function newRun(cond) {
+  const same = state.runs.filter((r) => r.condition === cond);
+  const last = [...state.runs].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).pop();
+  const nextNo = same.reduce((m, r) => Math.max(m, num(r.runNo) ?? 0), 0) + 1;
+  const r = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    condition: cond, runNo: nextNo, date: today(),
+    roomTempStart: '', roomTempEnd: '', humidity: '',
+    training: last ? last.training : '', clothing: last ? last.clothing : '', // gleiche Bedingungen beibehalten
+    location: '', sensorFile: '', notes: '', outlier: false, outlierReason: '',
+    restStart: null, restEnd: null, sportStart: null, sportEnd: null, t0: null,
+    ratings: {}, finished: false, aborted: false, abortReason: '', abortedAt: null, createdAt: Date.now(),
+  };
+  state.runs.push(r); persist(r);
+  view = { name: 'run', id: r.id }; render(); window.scrollTo(0, 0);
+}
+
+const actions = {
+  home() { view = { name: 'home' }; render(); window.scrollTo(0, 0); },
+  open(b) { view = { name: 'run', id: b.dataset.id }; render(); window.scrollTo(0, 0); },
+  new(b) { newRun(b.dataset.cond); },
+  async restStart() {
+    const r = getRun(view.id);
+    if (num(r.roomTempStart) === null && !(await ask({ title: 'Raumtemperatur Start fehlt', text: 'Trotzdem mit der Ruhemessung beginnen?', ok: 'Trotzdem starten' }))) return;
+    r.restStart = Date.now(); persist(r); render();
+  },
+  rateRest() { openRating(view.id, 'rest'); },
+  restEnd() {
+    const r = getRun(view.id); r.restEnd = Date.now(); persist(r); render();
+    if (!r.ratings.rest) openRating(r.id, 'rest');
+  },
+  async sportStart() {
+    const r = getRun(view.id);
+    if (!r.ratings.rest && !(await ask({ title: 'Ruhe-Gefühl fehlt', text: 'Das Gefühl in Ruhe wurde noch nicht bewertet. Trotzdem mit Sport beginnen?', ok: 'Sport starten' }))) return;
+    r.sportStart = Date.now(); persist(r); render();
+  },
+  sportEnd() { const r = getRun(view.id); r.sportEnd = Date.now(); persist(r); render(); },
+  async t0() {
+    const r = getRun(view.id);
+    const other = recoveryRun();
+    if (other && other.id !== r.id) { toast('Es läuft schon eine Erholungsphase in einem anderen Durchlauf.'); return; }
+    unlockAudio();   // Ton direkt beim Antippen freischalten
+    const ok = await ask({ title: 'Zeitpunkt 0 bestätigen?', ok: 'Ja, Erholung startet jetzt',
+      text: 'Die 20-Minuten-Erholung beginnt, sobald du bestätigst.\nDu wirst bei 0, 5, 10, 15 und 20 Minuten mit Ton und Vibration erinnert.\nBildschirm anlassen und diese Seite geöffnet lassen.' });
+    if (!ok) return;
+    unlockAudio(); requestNotify();
+    r.t0 = Date.now(); persist(r); keepAwake(true);
+    render(); tick();
+  },
+  rate(b) { storeRating(Number(b.dataset.value), false); },
+  async skipRating() {
+    if (await ask({ title: 'Nicht bewertet?', text: 'Diesen Zeitpunkt als „nicht bewertet“ speichern? Das lässt sich nicht rückgängig machen.', ok: 'Als nicht bewertet speichern', danger: true })) storeRating(null, true);
+  },
+  closeRating() { closeRating(); },
+  testSound() { unlockAudio(); beep(); vibrate(300); },
+  async finish() {
+    const r = getRun(view.id);
+    if (num(r.roomTempEnd) === null && !(await ask({ title: 'Raumtemperatur Ende fehlt', text: 'Trotzdem abschließen?', ok: 'Abschließen' }))) return;
+    r.finished = true; persist(r); keepAwake(false); render();
+    toast('Durchlauf abgeschlossen. Bitte CSV exportieren!');
+  },
+  async abort() {
+    const r = getRun(view.id);
+    const reason = await ask({ title: 'Versuch abbrechen', text: 'Grund angeben. Der Durchlauf bleibt gespeichert und wird als abgebrochen markiert.',
+      input: 'z. B. Schwindel, Frösteln, Sensor verrutscht', ok: 'Abbrechen und speichern', cancel: 'Weiter messen', danger: true });
+    if (reason === null) return;
+    r.aborted = true; r.abortReason = reason; r.abortedAt = Date.now();
+    persist(r); keepAwake(false); closeRating(); render();
+  },
+  async delete() {
+    const r = getRun(view.id);
+    const ok = await ask({ title: `${CONDITIONS[r.condition].label} Nr. ${r.runNo} löschen?`,
+      text: 'Der Durchlauf wird endgültig entfernt. Fehlerhafte Messungen besser als Ausreißer markieren statt löschen.', ok: 'Endgültig löschen', danger: true });
+    if (!ok) return;
+    state.runs = state.runs.filter((x) => x.id !== r.id); persistDelete(r.id);
+    view = { name: 'home' }; render();
+  },
+  exportRuns, exportRatings, backup,
+  import() { $('#importFile').click(); },
+};
+
+// ---------- Ereignisse ----------
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]');
+  if (b && actions[b.dataset.act]) actions[b.dataset.act](b);
+});
+document.addEventListener('pointerdown', unlockAudio);   // Ton darf erst nach einer Berührung abgespielt werden
+document.addEventListener('input', (e) => {
+  const key = e.target.dataset && e.target.dataset.field;
+  if (!key || view.name !== 'run') return;
+  const r = getRun(view.id);
+  if (!r) return;
+  r[key] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+  if (key === 'condition') { persist(r); render(); return; }
+  persist(r, 800);                                          // Tippen zusammenfassen
+  if (['roomTempStart', 'roomTempEnd', 'humidity'].includes(key)) { const w = $('#warn'); if (w) w.innerHTML = warnings(r); }
+});
+$('#importFile').addEventListener('change', (e) => {
+  const f = e.target.files[0]; if (f) importBackup(f); e.target.value = '';
+});
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { if (recoveryRun()) keepAwake(true); tick(); }
+});
+window.addEventListener('beforeunload', (e) => {
+  if (recoveryRun()) { e.preventDefault(); e.returnValue = ''; }
+});
+
+// Beim Laden: laufende Erholungsphase direkt öffnen
+const running = recoveryRun();
+if (running) { view = { name: 'run', id: running.id }; keepAwake(true); }
+render();
+setInterval(tick, 1000);
+tick();
+connectDb();
+</script>
+</body>
+</html>

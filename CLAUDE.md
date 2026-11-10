@@ -37,10 +37,12 @@ Warm wird selbst erzeugt: kleines Bad oder Zimmer mit Heizkörper/Heizlüfter (c
 ## Repository-Struktur
 
 ```
+app/            Messprotokoll-App (index.html) zum Eintragen während der Versuche
+ios/            dieselbe App als iPhone-App (Messprotokoll.swiftpm, mit Xcode öffnen), Erinnerung auch bei gesperrtem Handy
 data/
   raw/          Original-CSV-Dateien vom Sensor (NIE verändern)
   processed/    bereinigte und umgerechnete Daten
-protokolle/     ausgefüllte Messprotokolle (Gefühlswerte, Umgebung)
+protokolle/     ausgefüllte Messprotokolle (CSV-Export der App: Gefühlswerte, Umgebung)
 analyse/        Skripte und Notebooks
 abbildungen/    erzeugte Diagramme
 doku/           Projektbericht, Poster, Notizen
@@ -81,6 +83,7 @@ Der Wärmefluss ist beim Research-Gerät nur nach Vereinbarung mit greenTEG frei
 ## Befehle
 
 ```bash
+# app/index.html im Browser öffnen: Protokoll während des Versuchs (siehe app/README.md)
 python analyse/auswerten.py data/raw/<datei>.csv   # Rohdaten umrechnen
 python analyse/vergleich.py                         # drei Bedingungen vergleichen
 ```
