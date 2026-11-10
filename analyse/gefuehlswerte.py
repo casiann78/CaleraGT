@@ -7,6 +7,7 @@ Liest den neuesten Export „protokoll_gefuehlswerte_<datum>.csv“ aus protokol
   abbildungen/gefuehlsverlauf_mittelwert.png   Mittelwert ± Standardabweichung pro Bedingung
   abbildungen/gefuehlsverlauf_einzeln.png      jeder Durchlauf einzeln, eine Spalte pro Bedingung
   data/processed/gefuehl_zusammenfassung.csv   Mittelwert, Standardabweichung und n pro Zeitpunkt
+  data/processed/diagramm_mittelwerte.csv      dieselben Werte als Tabelle für Numbers/Excel
 
 Abgebrochene, unvollständige und als Ausreißer markierte Durchläufe werden NICHT
 gelöscht, sondern hier ausgeschlossen und in der Konsole mit Grund aufgelistet.
@@ -111,6 +112,23 @@ def summarize(valid: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
+def write_chart_table(summary: pd.DataFrame, out: Path) -> None:
+    """Tabelle für ein Diagramm in Numbers/Excel (deutsches Format: Semikolon, Dezimalkomma).
+
+    Zeilen: Ruhe, 0 … 20 Min. Spalten: Mittelwert je Bedingung, dann SD und n.
+    """
+    order = ["rest", "0", "5", "10", "15", "20"]
+    table = pd.DataFrame({"Zeitpunkt": ["Ruhe" if m == "rest" else f"{m} Min." for m in order]})
+    by_condition = {key: summary[summary["condition"] == key].set_index("minute") for key in CONDITIONS}
+    for column, suffix in (("mean", ""), ("std", " SD"), ("n", " n")):
+        for key, cfg in CONDITIONS.items():
+            values = by_condition[key][column]
+            table[cfg["label"] + suffix] = [values.get(m) for m in order]
+    for cfg in CONDITIONS.values():
+        table[cfg["label"] + " n"] = table[cfg["label"] + " n"].fillna(0).astype(int)
+    table.to_csv(out, sep=";", decimal=",", index=False, encoding="utf-8-sig")
+
+
 def style_axis(ax) -> None:
     ax.set_xticks(X_TICKS)
     ax.set_xticklabels(X_LABELS)
@@ -184,6 +202,10 @@ def main() -> None:
     summary_out = PROCESSED_DIR / "gefuehl_zusammenfassung.csv"
     summary.drop(columns="x").to_csv(summary_out, index=False)
     print(f"Tabelle gespeichert: {summary_out.relative_to(ROOT)}")
+
+    chart_out = PROCESSED_DIR / "diagramm_mittelwerte.csv"
+    write_chart_table(summary, chart_out)
+    print(f"Tabelle für Numbers/Excel gespeichert: {chart_out.relative_to(ROOT)}")
 
     mean_out = FIGURE_DIR / "gefuehlsverlauf_mittelwert.png"
     plot_mean(summary, valid, mean_out)
