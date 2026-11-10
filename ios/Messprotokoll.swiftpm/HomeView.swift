@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct HomeView: View {
     @EnvironmentObject var store: Store
     @State private var showSettings = false
+    @State private var showAnalysis = false
 
     private var remindersNeedAttention: Bool {
         store.notificationStatusKnown && (store.notificationStatus != .authorized || !store.notificationHints.isEmpty)
@@ -41,6 +42,14 @@ struct HomeView: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Messprotokoll")
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    showAnalysis = true
+                } label: {
+                    Image(systemName: "chart.xyaxis.line")
+                }
+                .accessibilityLabel("Auswertung")
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     showSettings = true
@@ -52,6 +61,10 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
+                .environmentObject(store)
+        }
+        .sheet(isPresented: $showAnalysis) {
+            AnalysisView()
                 .environmentObject(store)
         }
     }

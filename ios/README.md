@@ -30,6 +30,7 @@ Mit einer kostenlosen Apple-ID läuft die App **7 Tage**. Danach einfach Schritt
 - **Übersicht:** Fortschritt pro Bedingung (Ziel 3 Durchläufe), Knöpfe für einen neuen Durchlauf, Liste aller Durchläufe mit farbigen Gefühlswerten.
 - **Durchlauf:** Reiter „Ablauf“ (Schrittanzeige, Uhr, Erholungsring, Gefühlsverlauf als Diagramm), „Kopfdaten“ und „Notizen“. Unten steht immer der Knopf für den nächsten Schritt.
 - **Einstellungen** (Zahnrad): Status der Mitteilungen, Test-Erinnerung, Export und Import, Sicherheitsregeln.
+- **Auswertung** (Diagramm-Symbol oben links): Gefühlsverlauf aller abgeschlossenen Durchläufe als Mittelwert ± Standardabweichung pro Bedingung, Tabelle mit n. Mit „Diagramm als Bild teilen“ als PNG-Datei speichern (z. B. in „Dateien“ oder per AirDrop an den Mac). Auch das Diagramm eines einzelnen Durchlaufs lässt sich so teilen.
 
 ## Vor jedem Versuch
 

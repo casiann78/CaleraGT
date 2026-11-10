@@ -143,7 +143,8 @@ def plot_mean(summary: pd.DataFrame, valid: pd.DataFrame, out: Path) -> None:
     style_axis(ax)
     ax.set_ylabel("Gefühlswert (−3 sehr kalt … +3 sehr heiß)")
     ax.set_title("Gefühltes Warm/Kalt nach dem Sport\nMittelwert ± Standardabweichung")
-    ax.legend(loc="upper right")
+    # Legende unter dem Diagramm, damit sie keine Werte bei +3 verdeckt
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=3, frameon=False)
     fig.tight_layout()
     fig.savefig(out)
     plt.close(fig)
