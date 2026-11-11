@@ -150,6 +150,12 @@ struct AnalysisView: View {
                                 Label("Diagramm als Bild teilen", systemImage: "square.and.arrow.up")
                             }
                             .buttonStyle(.bordered)
+                            Button {
+                                shareItems = store.exportXlsxFile()
+                            } label: {
+                                Label("Excel-Datei mit Diagrammen teilen", systemImage: "tablecells")
+                            }
+                            .buttonStyle(.bordered)
                         }
                         .card()
                     }

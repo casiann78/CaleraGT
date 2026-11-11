@@ -393,6 +393,22 @@ final class Store: ObservableObject {
         return germanCSV(rows)
     }
 
+    /// Nur die Excel-Datei mit Diagrammen; nil, wenn es noch keinen gültigen Durchlauf gibt
+    func exportXlsxFile() -> ShareItems? {
+        guard let xlsx = buildXlsx(runs: runs) else { return nil }
+        let day = Fmt.day.string(from: Date())
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("export", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent("gefuehlswerte_diagramme_\(day).xlsx")
+            try xlsx.write(to: url, options: .atomic)
+            return ShareItems(urls: [url])
+        } catch {
+            saveError = "Export fehlgeschlagen: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
     /// Schreibt CSV-Dateien und Sicherung in einen temporären Ordner für das Teilen-Menü
     func exportFiles() -> ShareItems? {
         let day = Fmt.day.string(from: Date())
