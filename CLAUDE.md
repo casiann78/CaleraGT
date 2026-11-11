@@ -66,7 +66,7 @@ Der Wärmefluss ist beim Research-Gerät nur nach Vereinbarung mit greenTEG frei
 - **Rohdaten niemals überschreiben.** Alle Ergebnisse in `data/processed/` oder `abbildungen/` ablegen.
 - Jede Umrechnung in einem Skript festhalten, damit sie nachvollziehbar und wiederholbar ist.
 - Sprache: Code-Kommentare und Doku auf Deutsch, Variablennamen auf Englisch.
-- Python bevorzugen (pandas, numpy, matplotlib, scipy). Keine neuen Pakete ohne Rückfrage.
+- Python bevorzugen (pandas, numpy, matplotlib, scipy, openpyxl; siehe requirements.txt). Keine neuen Pakete ohne Rückfrage.
 - Diagramme: Achsen mit Einheiten beschriften, pro Diagramm eine Aussage, gleiche Farben für gleiche Bedingungen (Kalt = blau, Angenehm = grün, Warm = rot).
 - Statistik einfach halten: Mittelwerte, Standardabweichung, Korrelation (Pearson/Spearman). Immer die Anzahl der Durchläufe (n) angeben.
 - Nichts beschönigen. Ausreißer und fehlerhafte Messungen markieren und begründen, nicht stillschweigend löschen.
@@ -85,6 +85,7 @@ Der Wärmefluss ist beim Research-Gerät nur nach Vereinbarung mit greenTEG frei
 ```bash
 # app/index.html im Browser öffnen: Protokoll während des Versuchs (siehe app/README.md)
 python analyse/gefuehlswerte.py                    # Gefühlswerte: Diagramme + Tabelle (neuester Export in protokolle/)
+python analyse/excel_export.py                     # Excel-Datei mit bearbeitbaren Diagrammen (für Excel/Numbers)
 python analyse/auswerten.py data/raw/<datei>.csv   # Rohdaten umrechnen
 python analyse/vergleich.py                         # drei Bedingungen vergleichen
 ```
