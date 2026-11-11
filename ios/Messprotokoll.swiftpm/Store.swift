@@ -411,7 +411,14 @@ final class Store: ObservableObject {
             let chartRunsURL = dir.appendingPathComponent("diagramm_einzelne_durchlaeufe_\(day).csv")
             try chartMeansCSV().write(to: chartMeansURL, atomically: true, encoding: .utf8)
             try chartRunsCSV().write(to: chartRunsURL, atomically: true, encoding: .utf8)
-            return ShareItems(urls: [runsURL, ratingsURL, backupURL, chartMeansURL, chartRunsURL])
+            var urls: [URL] = [runsURL, ratingsURL, backupURL, chartMeansURL, chartRunsURL]
+            // Excel-Datei mit echten Diagrammen (nur wenn es abgeschlossene Durchläufe gibt)
+            if let xlsx = buildXlsx(runs: runs) {
+                let xlsxURL = dir.appendingPathComponent("gefuehlswerte_diagramme_\(day).xlsx")
+                try xlsx.write(to: xlsxURL, options: .atomic)
+                urls.append(xlsxURL)
+            }
+            return ShareItems(urls: urls)
         } catch {
             saveError = "Export fehlgeschlagen: \(error.localizedDescription)"
             return nil

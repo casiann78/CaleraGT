@@ -14,6 +14,7 @@ Eine einzelne HTML-Datei (`index.html`), mit der während eines Versuchs alle Pr
   - `protokoll_durchlaeufe_<datum>.csv`: eine Zeile pro Durchlauf
   - `protokoll_gefuehlswerte_<datum>.csv`: eine Zeile pro Bewertung (gut für Korrelationen)
   - `protokoll_sicherung_<datum>.json`: komplette Sicherung, lässt sich wieder laden
+  - `gefuehlswerte_diagramme_<datum>.xlsx`: Excel-Datei mit Tabellen und echten, bearbeitbaren Diagrammen (für Excel und Numbers), sobald mindestens ein Durchlauf abgeschlossen ist
 
 CSV-Format: Komma als Trennzeichen, Punkt als Dezimalzeichen, Zeiten als `YYYY-MM-DD hh:mm:ss` (Uhrzeit des Handys).
 
