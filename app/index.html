@@ -483,6 +483,9 @@ function renderHome() {
       <button data-act="exportRatings">CSV: Gefühlswerte</button>
     </div>
     <div class="row" style="margin-top:8px">
+      <button data-act="exportXlsx">Excel-Datei mit Diagrammen (für Excel/Numbers)</button>
+    </div>
+    <div class="row" style="margin-top:8px">
       <button data-act="backup">Sicherung (JSON) speichern</button>
       <button data-act="import">Sicherung laden</button>
     </div></section>
@@ -667,6 +670,7 @@ function csvCell(v) {
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 function toCsv(header, rows) { return [header, ...rows].map((row) => row.map(csvCell).join(',')).join('\n') + '\n'; }
+// text: Zeichenkette oder Uint8Array (z. B. xlsx)
 async function saveFile(filename, text, mime) {
   if (IN_VIEWER) {
     let dl = null;
@@ -710,6 +714,234 @@ function exportRatings() {
     }
   }
   return saveFile(`protokoll_gefuehlswerte_${today()}.csv`, toCsv(header, rows), 'text/csv;charset=utf-8');
+}
+// ---------- Excel-Export: xlsx-Datei mit echten (bearbeitbaren) Diagrammen ----------
+// Aufbau wie analyse/excel_export.py: Blatt „Mittelwerte“ und Blatt „Durchläufe“.
+// Die Datei wird ohne Zusatzbibliothek erzeugt (XML-Teile + unkomprimiertes ZIP).
+const XL_SLOTS = ['0', '5', '10', '15', '20', 'rest'];   // Ruhe als letzte Zeile, nicht im Diagramm
+const XL_COLORS = { kalt: '1F6FD1', angenehm: '1F8F4E', warm: 'CF3A2F' };
+const XL_Y_TITLE = 'Gefühlswert (−3 sehr kalt … +3 sehr heiß)';
+const XL_X_TITLE = 'Zeit nach dem Sport [min]';
+const XL_NOTE = 'Die Diagramme zeigen 0–20 Min. nach dem Sport. Der Ruhewert steht nur in der Tabelle.';
+
+// Gültig: abgeschlossen, nicht abgebrochen, nicht als Ausreißer markiert
+function validRunsOf(cond) {
+  return state.runs.filter((r) => r.condition === cond && r.finished && !r.aborted && !r.outlier)
+    .sort((a, b) => (num(a.runNo) ?? 0) - (num(b.runNo) ?? 0));
+}
+function slotStats(runs, slot) {
+  const values = runs.map((r) => r.ratings[slot]?.value).filter((v) => typeof v === 'number');
+  const n = values.length;
+  if (!n) return { mean: null, sd: null, n: 0 };
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const sd = n > 1 ? Math.sqrt(values.reduce((a, v) => a + (v - mean) * (v - mean), 0) / (n - 1)) : null;
+  return { mean, sd, n };
+}
+const round2 = (v) => (v === null ? null : Math.round(v * 100) / 100);
+const xlSlotLabel = (slot) => (slot === 'rest' ? 'Ruhe' : slot + ' Min.');
+const xmlEsc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function xlCol(index) {            // 0 → A, 25 → Z, 26 → AA
+  let name = ''; let i = index + 1;
+  while (i > 0) { const rem = (i - 1) % 26; name = String.fromCharCode(65 + rem) + name; i = Math.floor((i - 1) / 26); }
+  return name;
+}
+
+// Tabellenblatt: rows = Zeilen aus Zellen (Text, Zahl oder null); erste Zeile fett
+function xlSheetXml(rows, widths, hasDrawing) {
+  let x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><cols>';
+  widths.forEach((w, i) => { x += `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`; });
+  x += '</cols><sheetData>';
+  rows.forEach((row, ri) => {
+    if (!row.length) return;
+    x += `<row r="${ri + 1}">`;
+    row.forEach((cell, ci) => {
+      if (cell === null || cell === undefined || cell === '') return;
+      const ref = xlCol(ci) + (ri + 1);
+      const style = ri === 0 ? ' s="1"' : '';
+      if (typeof cell === 'number') x += `<c r="${ref}"${style}><v>${cell}</v></c>`;
+      else x += `<c r="${ref}"${style} t="inlineStr"><is><t>${xmlEsc(cell)}</t></is></c>`;
+    });
+    x += '</row>';
+  });
+  x += '</sheetData>';
+  if (hasDrawing) x += '<drawing r:id="rId1"/>';
+  return x + '</worksheet>';
+}
+
+function xlTitleXml(text, size) {
+  return `<c:title><c:tx><c:rich><a:bodyPr/><a:p><a:pPr><a:defRPr sz="${size}" b="1"/></a:pPr><a:r><a:rPr lang="de-DE" sz="${size}" b="1"/><a:t>${xmlEsc(text)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title>`;
+}
+
+// Liniendiagramm über die Zeilen 2–6 (0 bis 20 Min.). series: [{ col, name, color, values[5] }]
+function xlChartXml(title, sheetName, cats, series) {
+  const sheetRef = "'" + sheetName + "'!";
+  let x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<c:chart>' + xlTitleXml(title, 1400) + '<c:autoTitleDeleted val="0"/><c:plotArea><c:layout/><c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>';
+  series.forEach((s, i) => {
+    const col = xlCol(s.col);
+    x += `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>` +
+      `<c:tx><c:strRef><c:f>${xmlEsc(sheetRef)}$${col}$1</c:f><c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>${xmlEsc(s.name)}</c:v></c:pt></c:strCache></c:strRef></c:tx>` +
+      `<c:spPr><a:ln w="28575" cap="rnd"><a:solidFill><a:srgbClr val="${s.color}"/></a:solidFill><a:round/></a:ln></c:spPr>` +
+      `<c:marker><c:symbol val="circle"/><c:size val="7"/><c:spPr><a:solidFill><a:srgbClr val="${s.color}"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="${s.color}"/></a:solidFill></a:ln></c:spPr></c:marker>` +
+      `<c:cat><c:strRef><c:f>${xmlEsc(sheetRef)}$A$2:$A$6</c:f><c:strCache><c:ptCount val="${cats.length}"/>`;
+    cats.forEach((c, ci) => { x += `<c:pt idx="${ci}"><c:v>${xmlEsc(c)}</c:v></c:pt>`; });
+    x += `</c:strCache></c:strRef></c:cat><c:val><c:numRef><c:f>${xmlEsc(sheetRef)}$${col}$2:$${col}$6</c:f><c:numCache><c:formatCode>General</c:formatCode><c:ptCount val="${s.values.length}"/>`;
+    s.values.forEach((v, vi) => { if (v !== null && v !== undefined) x += `<c:pt idx="${vi}"><c:v>${v}</c:v></c:pt>`; });
+    x += '</c:numCache></c:numRef></c:val><c:smooth val="0"/></c:ser>';
+  });
+  x += '<c:marker val="1"/><c:axId val="10"/><c:axId val="100"/></c:lineChart>' +
+    '<c:catAx><c:axId val="10"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/>' + xlTitleXml(XL_X_TITLE, 1000) +
+    '<c:numFmt formatCode="General" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="low"/><c:crossAx val="100"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx>' +
+    '<c:valAx><c:axId val="100"/><c:scaling><c:orientation val="minMax"/><c:max val="3"/><c:min val="-3"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:majorGridlines/>' + xlTitleXml(XL_Y_TITLE, 1000) +
+    '<c:numFmt formatCode="General" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:crossAx val="10"/><c:crosses val="autoZero"/><c:crossBetween val="between"/><c:majorUnit val="1"/></c:valAx>' +
+    '</c:plotArea><c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend><c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart></c:chartSpace>';
+  return x;
+}
+
+// Zeichnungsebene eines Blatts: anchors = [{ row, rel }] (row = Zeile, ab der das Diagramm liegt, 0-basiert)
+function xlDrawingXml(anchors) {
+  let x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">';
+  anchors.forEach((a, i) => {
+    x += `<xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${a.row}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:ext cx="6480000" cy="3600000"/>` +
+      `<xdr:graphicFrame macro=""><xdr:nvGraphicFramePr><xdr:cNvPr id="${i + 2}" name="Diagramm ${i + 1}"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>` +
+      '<xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">' +
+      `<c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId${a.rel}"/>` +
+      '</a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:oneCellAnchor>';
+  });
+  return x + '</xdr:wsDr>';
+}
+
+function xlRelsXml(items) {      // items = [[Typ, Ziel], …] → rId1, rId2, …
+  const base = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    items.map(([type, target], i) => `<Relationship Id="rId${i + 1}" Type="${base}${type}" Target="${target}"/>`).join('') + '</Relationships>';
+}
+
+// Alle Teile der xlsx-Datei als [Pfad, XML]; null, wenn es keine gültigen Durchläufe gibt
+function buildXlsxParts() {
+  const conds = Object.keys(CONDITIONS);
+  const valid = {}; conds.forEach((c) => { valid[c] = validRunsOf(c); });
+  if (!conds.some((c) => valid[c].length)) return null;
+  const labels = conds.map((c) => CONDITIONS[c].label);
+  const cats = XL_SLOTS.slice(0, 5).map(xlSlotLabel);
+  const charts = [];
+
+  // Blatt 1: Mittelwerte
+  const stats = XL_SLOTS.map((slot) => conds.map((c) => slotStats(valid[c], slot)));
+  const rows1 = [['Zeitpunkt', ...labels, ...labels.map((l) => l + ' SD'), ...labels.map((l) => l + ' n')]];
+  XL_SLOTS.forEach((slot, si) => {
+    rows1.push([xlSlotLabel(slot), ...stats[si].map((s) => round2(s.mean)), ...stats[si].map((s) => round2(s.sd)), ...stats[si].map((s) => s.n)]);
+  });
+  rows1.push([]);
+  rows1.push(['Anzahl gültiger Durchläufe: ' + conds.map((c) => `${CONDITIONS[c].label} n = ${valid[c].length}`).join(', ')]);
+  rows1.push([XL_NOTE]);
+  charts.push(xlChartXml('Gefühltes Warm/Kalt nach dem Sport (Mittelwerte)', 'Mittelwerte', cats,
+    conds.map((c, ci) => ({ col: ci + 1, name: labels[ci], color: XL_COLORS[c], values: stats.slice(0, 5).map((row) => round2(row[ci].mean)) }))));
+  const anchors1 = [{ row: 11, rel: 1 }];
+
+  // Blatt 2: einzelne Durchläufe, ein Diagramm pro Bedingung
+  const columns = [];
+  conds.forEach((c) => valid[c].forEach((r) => columns.push({ cond: c, name: `${CONDITIONS[c].label} Nr. ${r.runNo}`,
+    values: XL_SLOTS.map((slot) => { const v = r.ratings[slot]?.value; return typeof v === 'number' ? v : null; }) })));
+  const rows2 = [['Zeitpunkt', ...columns.map((col) => col.name)]];
+  XL_SLOTS.forEach((slot, si) => rows2.push([xlSlotLabel(slot), ...columns.map((col) => col.values[si])]));
+  rows2.push([]);
+  rows2.push([XL_NOTE]);
+  const anchors2 = [];
+  conds.forEach((c) => {
+    const series = [];
+    columns.forEach((col, i) => { if (col.cond === c) series.push({ col: i + 1, name: col.name, color: XL_COLORS[c], values: col.values.slice(0, 5) }); });
+    if (!series.length) return;
+    charts.push(xlChartXml(`${CONDITIONS[c].label}: einzelne Durchläufe (n = ${series.length})`, 'Durchläufe', cats, series));
+    anchors2.push({ row: 10 + anchors2.length * 24, rel: anchors2.length + 1 });
+  });
+
+  const main = 'application/vnd.openxmlformats-officedocument.';
+  let types = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>' +
+    `<Override PartName="/xl/workbook.xml" ContentType="${main}spreadsheetml.sheet.main+xml"/>` +
+    `<Override PartName="/xl/styles.xml" ContentType="${main}spreadsheetml.styles+xml"/>` +
+    `<Override PartName="/xl/worksheets/sheet1.xml" ContentType="${main}spreadsheetml.worksheet+xml"/>` +
+    `<Override PartName="/xl/worksheets/sheet2.xml" ContentType="${main}spreadsheetml.worksheet+xml"/>` +
+    `<Override PartName="/xl/drawings/drawing1.xml" ContentType="${main}drawing+xml"/>` +
+    `<Override PartName="/xl/drawings/drawing2.xml" ContentType="${main}drawing+xml"/>`;
+  charts.forEach((_, i) => { types += `<Override PartName="/xl/charts/chart${i + 1}.xml" ContentType="${main}drawingml.chart+xml"/>`; });
+  types += '</Types>';
+
+  const ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="${ns}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
+    '<sheets><sheet name="Mittelwerte" sheetId="1" r:id="rId1"/><sheet name="Durchläufe" sheetId="2" r:id="rId2"/></sheets></workbook>';
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="${ns}">` +
+    '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+    '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>' +
+    '<cellStyles count="1"><cellStyle name="Standard" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+
+  const widths = (row) => row.map((cell) => Math.max(12, String(cell).length + 3));
+  const parts = [
+    ['[Content_Types].xml', types],
+    ['_rels/.rels', xlRelsXml([['officeDocument', 'xl/workbook.xml']])],
+    ['xl/workbook.xml', workbook],
+    ['xl/_rels/workbook.xml.rels', xlRelsXml([['worksheet', 'worksheets/sheet1.xml'], ['worksheet', 'worksheets/sheet2.xml'], ['styles', 'styles.xml']])],
+    ['xl/styles.xml', styles],
+    ['xl/worksheets/sheet1.xml', xlSheetXml(rows1, widths(rows1[0]), true)],
+    ['xl/worksheets/_rels/sheet1.xml.rels', xlRelsXml([['drawing', '../drawings/drawing1.xml']])],
+    ['xl/worksheets/sheet2.xml', xlSheetXml(rows2, widths(rows2[0]), true)],
+    ['xl/worksheets/_rels/sheet2.xml.rels', xlRelsXml([['drawing', '../drawings/drawing2.xml']])],
+    ['xl/drawings/drawing1.xml', xlDrawingXml(anchors1)],
+    ['xl/drawings/_rels/drawing1.xml.rels', xlRelsXml([['chart', '../charts/chart1.xml']])],
+    ['xl/drawings/drawing2.xml', xlDrawingXml(anchors2)],
+    ['xl/drawings/_rels/drawing2.xml.rels', xlRelsXml(anchors2.map((_, i) => ['chart', `../charts/chart${i + 2}.xml`]))],
+  ];
+  charts.forEach((xml, i) => parts.push([`xl/charts/chart${i + 1}.xml`, xml]));
+  return parts;
+}
+
+// ZIP-Datei ohne Kompression („stored“) aus [Pfad, Text]-Paaren
+let crcTable = null;
+function crc32(bytes) {
+  if (!crcTable) {
+    crcTable = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); crcTable[n] = c >>> 0; }
+  }
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) crc = crcTable[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+function zipStore(parts) {
+  const enc = new TextEncoder();
+  const out = [];
+  const central = [];
+  let offset = 0;
+  const le16 = (v) => [v & 0xFF, (v >>> 8) & 0xFF];
+  const le32 = (v) => [v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF];
+  for (const [path, text] of parts) {
+    const name = enc.encode(path); const data = enc.encode(text); const crc = crc32(data);
+    // Kopf: Version 2.0, UTF-8-Namen (Bit 11), keine Kompression, Datum 1.1.2026
+    const common = [...le16(20), ...le16(0x0800), ...le16(0), ...le16(0), ...le16(0x5C21), ...le32(crc), ...le32(data.length), ...le32(data.length), ...le16(name.length), ...le16(0)];
+    const local = [0x50, 0x4B, 0x03, 0x04, ...common];
+    out.push(Uint8Array.from(local), name, data);
+    central.push(Uint8Array.from([0x50, 0x4B, 0x01, 0x02, ...le16(20), ...common, ...le16(0), ...le16(0), ...le16(0), ...le32(0), ...le32(offset)]), name);
+    offset += local.length + name.length + data.length;
+  }
+  const centralSize = central.reduce((a, b) => a + b.length, 0);
+  const end = Uint8Array.from([0x50, 0x4B, 0x05, 0x06, ...le16(0), ...le16(0), ...le16(parts.length), ...le16(parts.length), ...le32(centralSize), ...le32(offset), ...le16(0)]);
+  const all = [...out, ...central, end];
+  const result = new Uint8Array(all.reduce((a, b) => a + b.length, 0));
+  let pos = 0;
+  for (const chunk of all) { result.set(chunk, pos); pos += chunk.length; }
+  return result;
+}
+function exportXlsx() {
+  const parts = buildXlsxParts();
+  if (!parts) { toast('Noch keine abgeschlossenen Durchläufe für die Excel-Datei.'); return; }
+  return saveFile(`gefuehlswerte_diagramme_${today()}.xlsx`, zipStore(parts),
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
 function backup() {
   return saveFile(`protokoll_sicherung_${today()}.json`, JSON.stringify(state, null, 2), 'application/json');
@@ -809,7 +1041,7 @@ const actions = {
     state.runs = state.runs.filter((x) => x.id !== r.id); persistDelete(r.id);
     view = { name: 'home' }; render();
   },
-  exportRuns, exportRatings, backup,
+  exportRuns, exportRatings, backup, exportXlsx,
   import() { $('#importFile').click(); },
 };
 
