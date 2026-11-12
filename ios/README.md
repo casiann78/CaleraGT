@@ -42,7 +42,7 @@ Mit einer kostenlosen Apple-ID läuft die App **7 Tage**. Danach einfach Schritt
 ## Daten
 
 - Gespeichert wird in der App auf dem iPhone (`protokoll.json`).
-- Export: Zahnrad oben rechts › „CSV-Dateien und Sicherung teilen“, dann z. B. per AirDrop an den Mac und in `protokolle/` ablegen.
+- Export: Zahnrad oben rechts › „Excel-Datei mit Diagrammen teilen“ (nur die xlsx-Datei) oder „Alle Dateien teilen“, dann z. B. per AirDrop an den Mac und in `protokolle/` ablegen.
 - Für Diagramme in **Numbers oder Excel** enthält der Export zusätzlich `diagramm_mittelwerte_<datum>.csv` (Mittelwert, SD und n pro Bedingung und Zeitpunkt) und `diagramm_einzelne_durchlaeufe_<datum>.csv` (eine Spalte pro Durchlauf). Beide im deutschen Format (Semikolon, Dezimalkomma). Datei öffnen, die Spalten „Zeitpunkt“, „Kalt“, „Angenehm“, „Warm“ markieren und ein Liniendiagramm einfügen.
 - Der Export enthält außerdem `gefuehlswerte_diagramme_<datum>.xlsx`: eine Excel-Datei mit den Tabellen und **echten, bearbeitbaren Diagrammen** (Mittelwerte und ein Diagramm pro Bedingung). Sie lässt sich in Excel und Numbers öffnen. Sie entsteht erst, wenn mindestens ein Durchlauf abgeschlossen ist.
 - Die JSON-Sicherung hat dasselbe Format wie in der Web-App. Daten aus der Web-App lassen sich mit „Sicherung (JSON) laden“ übernehmen.

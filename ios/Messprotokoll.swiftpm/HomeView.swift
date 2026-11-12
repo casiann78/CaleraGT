@@ -320,6 +320,7 @@ struct SettingsView: View {
     @State private var shareItems: ShareItems?
     @State private var showImporter = false
     @State private var importMessage: String?
+    @State private var noXlsx = false
 
     var body: some View {
         NavigationStack {
@@ -328,9 +329,20 @@ struct SettingsView: View {
 
                 Section {
                     Button {
+                        shareItems = store.exportXlsxFile()
+                        noXlsx = shareItems == nil
+                    } label: {
+                        Label("Excel-Datei mit Diagrammen teilen", systemImage: "chart.xyaxis.line")
+                    }
+                    if noXlsx {
+                        Text("Noch keine Excel-Datei möglich: Es gibt keinen abgeschlossenen Durchlauf (abgebrochene und als Ausreißer markierte zählen nicht).")
+                            .font(.footnote)
+                            .foregroundStyle(Color.orange)
+                    }
+                    Button {
                         shareItems = store.exportFiles()
                     } label: {
-                        Label("CSV-Dateien und Sicherung teilen", systemImage: "square.and.arrow.up")
+                        Label("Alle Dateien teilen (CSV, Sicherung, Excel)", systemImage: "square.and.arrow.up")
                     }
                     Button {
                         showImporter = true
